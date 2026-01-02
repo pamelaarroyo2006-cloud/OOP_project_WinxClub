@@ -1,0 +1,3120 @@
+----------TeacherDashboardPanel.java-----------
+package iems.ui;
+
+import iems.dao.MaterialDAO;
+import iems.dao.UserDAO;
+import iems.model.*;
+import javax.swing.*;
+import javax.swing.table.*;
+import java.awt.*;
+import java.sql.SQLException;
+import java.util.List;
+
+public class TeacherDashboardPanel extends JPanel {
+    private final User teacher;
+    private DefaultTableModel studentsTableModel;
+    private DefaultTableModel materialsTableModel;
+    private JTable studentsTable;
+    private JTable materialsTable;
+
+    // Colors
+    private static final Color PRIMARY_COLOR = new Color(59, 130, 246);
+    private static final Color SUCCESS_COLOR = new Color(16, 185, 129);
+    private static final Color WARNING_COLOR = new Color(245, 158, 11);
+    private static final Color DANGER_COLOR = new Color(239, 68, 68);
+    private static final Color CARD_BG = Color.WHITE;
+    private static final Color TEXT_PRIMARY = new Color(30, 41, 59);
+    private static final Color TEXT_SECONDARY = new Color(100, 116, 139);
+
+    public TeacherDashboardPanel(User teacher) {
+        this.teacher = teacher;
+        initializeUI();
+        loadInitialData();
+    }
+
+    private void initializeUI() {
+        setLayout(new BorderLayout());
+        setBackground(new Color(241, 245, 249));
+
+        // Create main container with BorderLayout
+        JPanel mainContainer = new JPanel(new BorderLayout());
+        mainContainer.setBackground(new Color(241, 245, 249));
+
+        // Header Panel
+        mainContainer.add(createHeaderPanel(), BorderLayout.NORTH);
+
+        // Main Content with TabbedPane
+        JTabbedPane tabbedPane = new JTabbedPane(JTabbedPane.TOP);
+        tabbedPane.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        tabbedPane.setBackground(Color.WHITE);
+
+        // Overview Tab
+        tabbedPane.addTab("Overview", createOverviewPanel());
+
+        // Students Tab
+        tabbedPane.addTab("Students", createStudentsPanel());
+
+        // Materials Tab
+        tabbedPane.addTab("Course Materials", createMaterialsPanel());
+
+        // Assignments Tab
+        tabbedPane.addTab("Assignments", createAssignmentsPanel());
+
+        mainContainer.add(tabbedPane, BorderLayout.CENTER);
+
+        // Add main container to this panel
+        add(mainContainer, BorderLayout.CENTER);
+    }
+
+    private JPanel createHeaderPanel() {
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(Color.WHITE);
+        header.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(226, 232, 240)),
+                BorderFactory.createEmptyBorder(20, 30, 20, 30)));
+
+        // Left side
+        JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        leftPanel.setBackground(Color.WHITE);
+
+        JLabel title = new JLabel("Teacher Dashboard");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        title.setForeground(TEXT_PRIMARY);
+
+        leftPanel.add(title);
+
+        // Right side - Quick stats
+        JPanel statsPanel = createQuickStatsPanel();
+
+        header.add(leftPanel, BorderLayout.WEST);
+        header.add(statsPanel, BorderLayout.EAST);
+
+        return header;
+    }
+
+    private JPanel createQuickStatsPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 20, 0));
+        panel.setBackground(Color.WHITE);
+
+        // Create stat cards
+        panel.add(createStatCard("Total Students", "24", PRIMARY_COLOR));
+        panel.add(createStatCard("Active Courses", "6", SUCCESS_COLOR));
+        panel.add(createStatCard("Assignments Due", "3", WARNING_COLOR));
+        panel.add(createStatCard("Messages", "5", DANGER_COLOR));
+
+        return panel;
+    }
+
+    private JPanel createStatCard(String title, String value, Color color) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
+                BorderFactory.createEmptyBorder(15, 20, 15, 20)));
+        card.setPreferredSize(new Dimension(150, 80));
+
+        JLabel valueLabel = new JLabel(value);
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        valueLabel.setForeground(color);
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        titleLabel.setForeground(TEXT_SECONDARY);
+
+        JPanel content = new JPanel(new BorderLayout(0, 5));
+        content.setBackground(CARD_BG);
+        content.add(valueLabel, BorderLayout.CENTER);
+        content.add(titleLabel, BorderLayout.SOUTH);
+
+        card.add(content, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel createOverviewPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBackground(new Color(241, 245, 249));
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.weightx = 1.0;
+        gbc.weighty = 1.0;
+        gbc.insets = new Insets(10, 10, 10, 10);
+
+        // Welcome Card
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        gbc.gridheight = 2;
+        panel.add(createWelcomeCard(), gbc);
+
+        // Upcoming Assignments
+        gbc.gridx = 2;
+        gbc.gridy = 0;
+        gbc.gridwidth = 1;
+        gbc.gridheight = 1;
+        panel.add(createUpcomingCard(), gbc);
+
+        // Recent Activity
+        gbc.gridy = 1;
+        panel.add(createActivityCard(), gbc);
+
+        // Quick Actions
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = 3;
+        gbc.gridheight = 1;
+        gbc.weighty = 0.5;
+        panel.add(createQuickActionsCard(), gbc);
+
+        return panel;
+    }
+
+    private JPanel createWelcomeCard() {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
+                BorderFactory.createEmptyBorder(25, 25, 25, 25)));
+
+        JLabel welcomeLabel = new JLabel("Welcome, " + teacher.getFullName() + "!");
+        welcomeLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        welcomeLabel.setForeground(TEXT_PRIMARY);
+
+        JTextArea description = new JTextArea(
+                "You have 3 classes scheduled for today.\n" +
+                        "There are 12 assignments waiting to be graded.\n" +
+                        "Overall student progress: 85% average completion rate.");
+        description.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        description.setForeground(TEXT_SECONDARY);
+        description.setBackground(CARD_BG);
+        description.setEditable(false);
+        description.setLineWrap(true);
+        description.setWrapStyleWord(true);
+
+        JButton viewScheduleBtn = createActionButton("View Today's Schedule", PRIMARY_COLOR);
+        viewScheduleBtn.addActionListener(e -> viewSchedule());
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        buttonPanel.setBackground(CARD_BG);
+        buttonPanel.add(viewScheduleBtn);
+
+        JPanel content = new JPanel(new BorderLayout(0, 15));
+        content.setBackground(CARD_BG);
+        content.add(welcomeLabel, BorderLayout.NORTH);
+        content.add(description, BorderLayout.CENTER);
+        content.add(buttonPanel, BorderLayout.SOUTH);
+
+        card.add(content, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel createUpcomingCard() {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
+                BorderFactory.createEmptyBorder(20, 20, 20, 20)));
+
+        JLabel title = new JLabel("Upcoming Assignments");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        title.setForeground(TEXT_PRIMARY);
+        title.setBorder(BorderFactory.createEmptyBorder(0, 0, 15, 0));
+
+        String[] assignments = {
+                "Math Homework - Due Tomorrow",
+                "Science Project - Due in 3 days",
+                "History Essay - Due Next Week"
+        };
+
+        JList<String> assignmentList = new JList<>(assignments);
+        assignmentList.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        assignmentList.setBackground(CARD_BG);
+        assignmentList.setSelectionBackground(new Color(59, 130, 246, 100));
+
+        JButton gradeBtn = createActionButton("Grade Assignments", PRIMARY_COLOR);
+        gradeBtn.addActionListener(e -> gradeAssignments());
+
+        JPanel content = new JPanel(new BorderLayout(0, 15));
+        content.setBackground(CARD_BG);
+        content.add(title, BorderLayout.NORTH);
+        content.add(new JScrollPane(assignmentList), BorderLayout.CENTER);
+        content.add(gradeBtn, BorderLayout.SOUTH);
+
+        card.add(content, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel createActivityCard() {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
+                BorderFactory.createEmptyBorder(20, 20, 20, 20)));
+
+        JLabel title = new JLabel("Recent Activity");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        title.setForeground(TEXT_PRIMARY);
+        title.setBorder(BorderFactory.createEmptyBorder(0, 0, 15, 0));
+
+        String[] activities = {
+                "10:30 AM - Graded Math assignments",
+                "9:15 AM - Uploaded lecture notes",
+                "Yesterday - Scheduled parent meetings",
+                "2 days ago - Created new quiz"
+        };
+
+        JList<String> activityList = new JList<>(activities);
+        activityList.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        activityList.setBackground(CARD_BG);
+
+        JButton viewAllBtn = createActionButton("View All Activity", PRIMARY_COLOR);
+
+        JPanel content = new JPanel(new BorderLayout(0, 15));
+        content.setBackground(CARD_BG);
+        content.add(title, BorderLayout.NORTH);
+        content.add(new JScrollPane(activityList), BorderLayout.CENTER);
+        content.add(viewAllBtn, BorderLayout.SOUTH);
+
+        card.add(content, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel createQuickActionsCard() {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
+                BorderFactory.createEmptyBorder(20, 20, 20, 20)));
+
+        JLabel title = new JLabel("Quick Actions");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        title.setForeground(TEXT_PRIMARY);
+        title.setBorder(BorderFactory.createEmptyBorder(0, 0, 20, 0));
+
+        JPanel actionsPanel = new JPanel(new GridLayout(2, 3, 15, 15));
+        actionsPanel.setBackground(CARD_BG);
+
+        // Create action buttons
+        String[] actions = {
+                "Create Assignment", "Upload Material", "Schedule Class",
+                "Send Announcement", "Grade Submissions", "View Reports"
+        };
+
+        Color[] colors = {
+                PRIMARY_COLOR, SUCCESS_COLOR, WARNING_COLOR,
+                DANGER_COLOR, new Color(168, 85, 247), new Color(14, 165, 233)
+        };
+
+        for (int i = 0; i < actions.length; i++) {
+            JButton actionBtn = createActionButton(actions[i], colors[i]);
+            final String action = actions[i];
+            actionBtn.addActionListener(e -> handleQuickAction(action));
+            actionsPanel.add(actionBtn);
+        }
+
+        JPanel content = new JPanel(new BorderLayout());
+        content.setBackground(CARD_BG);
+        content.add(title, BorderLayout.NORTH);
+        content.add(actionsPanel, BorderLayout.CENTER);
+
+        card.add(content, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel createStudentsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(new Color(241, 245, 249));
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        // Header with buttons
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(new Color(241, 245, 249));
+
+        JLabel title = new JLabel("Student Management");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        title.setForeground(TEXT_PRIMARY);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttonPanel.setBackground(new Color(241, 245, 249));
+
+        JButton addStudentBtn = createActionButton("Add Student", SUCCESS_COLOR);
+        JButton importBtn = createActionButton("Import List", PRIMARY_COLOR);
+        JButton exportBtn = createActionButton("Export List", WARNING_COLOR);
+
+        addStudentBtn.addActionListener(e -> addStudent());
+        importBtn.addActionListener(e -> importStudents());
+        exportBtn.addActionListener(e -> exportStudents());
+
+        buttonPanel.add(addStudentBtn);
+        buttonPanel.add(importBtn);
+        buttonPanel.add(exportBtn);
+
+        headerPanel.add(title, BorderLayout.WEST);
+        headerPanel.add(buttonPanel, BorderLayout.EAST);
+
+        // Create table
+        String[] columns = { "ID", "Name", "Email", "Age", "Progress", "Grade", "Actions" };
+        studentsTableModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return column == 6; // Only actions column is editable
+            }
+        };
+
+        studentsTable = new JTable(studentsTableModel);
+        styleTable(studentsTable);
+
+        // Add action column
+        studentsTable.getColumn("Actions").setCellRenderer(new ButtonRenderer());
+        studentsTable.getColumn("Actions").setCellEditor(new ButtonEditor(new JCheckBox()));
+
+        JScrollPane scrollPane = new JScrollPane(studentsTable);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(226, 232, 240)));
+
+        panel.add(headerPanel, BorderLayout.NORTH);
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private JPanel createMaterialsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(new Color(241, 245, 249));
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        // Header
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(new Color(241, 245, 249));
+
+        JLabel title = new JLabel("Course Materials");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        title.setForeground(TEXT_PRIMARY);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttonPanel.setBackground(new Color(241, 245, 249));
+
+        JButton addMaterialBtn = createActionButton("Add Material", SUCCESS_COLOR);
+        JButton uploadBtn = createActionButton("Upload File", PRIMARY_COLOR);
+        JButton organizeBtn = createActionButton("Organize", WARNING_COLOR);
+
+        addMaterialBtn.addActionListener(e -> addMaterial());
+        uploadBtn.addActionListener(e -> uploadFile());
+        organizeBtn.addActionListener(e -> organizeMaterials());
+
+        buttonPanel.add(addMaterialBtn);
+        buttonPanel.add(uploadBtn);
+        buttonPanel.add(organizeBtn);
+
+        headerPanel.add(title, BorderLayout.WEST);
+        headerPanel.add(buttonPanel, BorderLayout.EAST);
+
+        // Create materials table
+        String[] columns = { "ID", "Title", "Topic", "Level", "Format", "Actions" };
+        materialsTableModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return column == 5;
+            }
+        };
+
+        materialsTable = new JTable(materialsTableModel);
+        styleTable(materialsTable);
+
+        materialsTable.getColumn("Actions").setCellRenderer(new ButtonRenderer());
+        materialsTable.getColumn("Actions").setCellEditor(new ButtonEditor(new JCheckBox()));
+
+        JScrollPane scrollPane = new JScrollPane(materialsTable);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(226, 232, 240)));
+
+        panel.add(headerPanel, BorderLayout.NORTH);
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private JPanel createAssignmentsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(new Color(241, 245, 249));
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        JLabel title = new JLabel("Assignments Management");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        title.setForeground(TEXT_PRIMARY);
+        title.setHorizontalAlignment(SwingConstants.CENTER);
+
+        JPanel content = new JPanel(new GridLayout(2, 2, 20, 20));
+        content.setBackground(new Color(241, 245, 249));
+
+        // Assignment cards
+        content.add(createAssignmentCard("Math Homework", "Algebra", "Due: Tomorrow", PRIMARY_COLOR));
+        content.add(createAssignmentCard("Science Project", "Biology", "Due: Next Week", SUCCESS_COLOR));
+        content.add(createAssignmentCard("History Essay", "World War II", "Due: 3 days", WARNING_COLOR));
+        content.add(createAssignmentCard("English Reading", "Shakespeare", "Due: Today", DANGER_COLOR));
+
+        // Button panel
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 20));
+        buttonPanel.setBackground(new Color(241, 245, 249));
+
+        JButton createBtn = createActionButton("Create New Assignment", PRIMARY_COLOR);
+        JButton viewAllBtn = createActionButton("View All Assignments", SUCCESS_COLOR);
+
+        createBtn.addActionListener(e -> createAssignment());
+        viewAllBtn.addActionListener(e -> viewAllAssignments());
+
+        buttonPanel.add(createBtn);
+        buttonPanel.add(viewAllBtn);
+
+        JPanel mainContent = new JPanel(new BorderLayout(0, 20));
+        mainContent.setBackground(new Color(241, 245, 249));
+        mainContent.add(title, BorderLayout.NORTH);
+        mainContent.add(content, BorderLayout.CENTER);
+        mainContent.add(buttonPanel, BorderLayout.SOUTH);
+
+        panel.add(mainContent, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel createAssignmentCard(String title, String subject, String dueDate, Color color) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
+                BorderFactory.createEmptyBorder(20, 20, 20, 20)));
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        titleLabel.setForeground(TEXT_PRIMARY);
+
+        JLabel subjectLabel = new JLabel(subject);
+        subjectLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        subjectLabel.setForeground(TEXT_SECONDARY);
+
+        JLabel dueLabel = new JLabel(dueDate);
+        dueLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        dueLabel.setForeground(color);
+
+        JButton viewBtn = createActionButton("View Details", color);
+        viewBtn.addActionListener(e -> viewAssignment(title));
+
+        JPanel infoPanel = new JPanel(new BorderLayout(0, 10));
+        infoPanel.setBackground(CARD_BG);
+        infoPanel.add(titleLabel, BorderLayout.NORTH);
+        infoPanel.add(subjectLabel, BorderLayout.CENTER);
+        infoPanel.add(dueLabel, BorderLayout.SOUTH);
+
+        JPanel content = new JPanel(new BorderLayout(0, 15));
+        content.setBackground(CARD_BG);
+        content.add(infoPanel, BorderLayout.CENTER);
+        content.add(viewBtn, BorderLayout.SOUTH);
+
+        card.add(content, BorderLayout.CENTER);
+        return card;
+    }
+
+    private void styleTable(JTable table) {
+        table.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        table.setRowHeight(40);
+        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 14));
+        table.getTableHeader().setBackground(new Color(30, 41, 59));
+        table.getTableHeader().setForeground(Color.WHITE);
+        table.setShowGrid(true);
+        table.setGridColor(new Color(226, 232, 240));
+        table.setSelectionBackground(new Color(59, 130, 246, 100));
+        table.setSelectionForeground(TEXT_PRIMARY);
+    }
+
+    private JButton createActionButton(String text, Color bgColor) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        button.setForeground(Color.WHITE);
+        button.setBackground(bgColor);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(bgColor.darker(), 1),
+                BorderFactory.createEmptyBorder(10, 20, 10, 20)));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        // Ensure text visibility with proper contrast
+        if (bgColor.getRed() + bgColor.getGreen() + bgColor.getBlue() > 600) {
+            button.setForeground(Color.BLACK);
+        }
+
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                button.setBackground(bgColor.darker());
+            }
+
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                button.setBackground(bgColor);
+            }
+        });
+
+        return button;
+    }
+
+    private void loadInitialData() {
+        loadStudents();
+        loadMaterials();
+    }
+
+    private void loadStudents() {
+        try {
+            UserDAO userDAO = new UserDAO();
+            // This would be replaced with actual teacher's students
+            // For now, show all learners
+            List<User> allUsers = userDAO.getAllUsers();
+
+            studentsTableModel.setRowCount(0);
+            for (User user : allUsers) {
+                if (user.getRole() == Role.LEARNER) {
+                    Object[] row = {
+                            user.getId(),
+                            user.getFullName(),
+                            user.getEmail(),
+                            user.getAge(),
+                            "85%",
+                            "A-",
+                            "Edit | Delete"
+                    };
+                    studentsTableModel.addRow(row);
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error loading students: " + e.getMessage(),
+                    "Database Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void loadMaterials() {
+        try {
+            MaterialDAO materialDAO = new MaterialDAO();
+            List<Material> materials = materialDAO.all();
+
+            materialsTableModel.setRowCount(0);
+            for (Material material : materials) {
+                Object[] row = {
+                        material.getId(),
+                        material.getTitle(),
+                        material.getTopic(),
+                        material.getLevel(),
+                        material.getFormat(),
+                        "Edit | Delete"
+                };
+                materialsTableModel.addRow(row);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Error loading materials: " + e.getMessage(),
+                    "Database Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    // Action methods
+    private void viewSchedule() {
+        JOptionPane.showMessageDialog(this, "Schedule view would open here.");
+    }
+
+    private void gradeAssignments() {
+        JOptionPane.showMessageDialog(this, "Grade assignments view would open here.");
+    }
+
+    private void handleQuickAction(String action) {
+        JOptionPane.showMessageDialog(this, "Action: " + action);
+    }
+
+    private void addStudent() {
+        String name = JOptionPane.showInputDialog(this, "Enter student name:");
+        if (name != null && !name.trim().isEmpty()) {
+            studentsTableModel.addRow(new Object[] {
+                    studentsTableModel.getRowCount() + 1,
+                    name,
+                    "student@example.com",
+                    18,
+                    "0%",
+                    "N/A",
+                    "Edit | Delete"
+            });
+            JOptionPane.showMessageDialog(this, "Student added successfully!");
+        }
+    }
+
+    private void importStudents() {
+        JFileChooser fileChooser = new JFileChooser();
+        if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            JOptionPane.showMessageDialog(this, "Importing from: " + fileChooser.getSelectedFile().getName());
+        }
+    }
+
+    private void exportStudents() {
+        JFileChooser fileChooser = new JFileChooser();
+        if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            JOptionPane.showMessageDialog(this, "Exporting to: " + fileChooser.getSelectedFile().getName());
+        }
+    }
+
+    private void addMaterial() {
+        JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), "Add Material", true);
+        dialog.setSize(400, 400);
+        dialog.setLocationRelativeTo(this);
+
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+
+        JTextField titleField = new JTextField(20);
+        JTextField topicField = new JTextField(20);
+        JComboBox<String> levelCombo = new JComboBox<>(new String[] { "Elementary", "Middle", "High" });
+        JComboBox<String> formatCombo = new JComboBox<>(new String[] { "PDF", "Video", "Link", "Document" });
+
+        panel.add(new JLabel("Title:"), gbc);
+        gbc.gridx = 1;
+        panel.add(titleField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        panel.add(new JLabel("Topic:"), gbc);
+        gbc.gridx = 1;
+        panel.add(topicField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        panel.add(new JLabel("Level:"), gbc);
+        gbc.gridx = 1;
+        panel.add(levelCombo, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        panel.add(new JLabel("Format:"), gbc);
+        gbc.gridx = 1;
+        panel.add(formatCombo, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 4;
+        gbc.gridwidth = 2;
+        gbc.anchor = GridBagConstraints.CENTER;
+
+        JButton saveBtn = createActionButton("Save", PRIMARY_COLOR);
+        saveBtn.addActionListener(e -> {
+            materialsTableModel.addRow(new Object[] {
+                    materialsTableModel.getRowCount() + 1,
+                    titleField.getText(),
+                    topicField.getText(),
+                    levelCombo.getSelectedItem(),
+                    formatCombo.getSelectedItem(),
+                    "Edit | Delete"
+            });
+            dialog.dispose();
+            JOptionPane.showMessageDialog(this, "Material added successfully!");
+        });
+
+        panel.add(saveBtn, gbc);
+        dialog.add(panel);
+        dialog.setVisible(true);
+    }
+
+    private void uploadFile() {
+        JFileChooser fileChooser = new JFileChooser();
+        if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            JOptionPane.showMessageDialog(this, "File uploaded: " + fileChooser.getSelectedFile().getName());
+        }
+    }
+
+    private void organizeMaterials() {
+        JOptionPane.showMessageDialog(this, "Organize materials dialog would open here.");
+    }
+
+    private void createAssignment() {
+        JOptionPane.showMessageDialog(this, "Create assignment dialog would open here.");
+    }
+
+    private void viewAllAssignments() {
+        JOptionPane.showMessageDialog(this, "View all assignments dialog would open here.");
+    }
+
+    private void viewAssignment(String title) {
+        JOptionPane.showMessageDialog(this, "Viewing assignment: " + title);
+    }
+
+    // Button renderer for table actions
+    class ButtonRenderer extends JButton implements TableCellRenderer {
+        public ButtonRenderer() {
+            setOpaque(true);
+            setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            setForeground(PRIMARY_COLOR);
+            setBackground(CARD_BG);
+            setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+        }
+
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean isSelected, boolean hasFocus, int row, int column) {
+            setText((value == null) ? "" : value.toString());
+            return this;
+        }
+    }
+
+    class ButtonEditor extends DefaultCellEditor {
+        private String label;
+        private boolean isPushed;
+
+        public ButtonEditor(JCheckBox checkBox) {
+            super(checkBox);
+            setClickCountToStart(1);
+        }
+
+        public Component getTableCellEditorComponent(JTable table, Object value,
+                boolean isSelected, int row, int column) {
+            label = (value == null) ? "" : value.toString();
+            JButton button = new JButton(label);
+            button.addActionListener(e -> fireEditingStopped());
+            return button;
+        }
+
+        public Object getCellEditorValue() {
+            if (isPushed) {
+                // Handle button click
+                int row = studentsTable.getEditingRow();
+                if (label.contains("Edit")) {
+                    editRow(row);
+                } else if (label.contains("Delete")) {
+                    deleteRow(row);
+                }
+            }
+            isPushed = false;
+            return label;
+        }
+
+        private void editRow(int row) {
+            JOptionPane.showMessageDialog(TeacherDashboardPanel.this,
+                    "Edit row: " + row);
+        }
+
+        private void deleteRow(int row) {
+            int response = JOptionPane.showConfirmDialog(TeacherDashboardPanel.this,
+                    "Are you sure you want to delete this item?",
+                    "Confirm Delete", JOptionPane.YES_NO_OPTION);
+
+            if (response == JOptionPane.YES_OPTION) {
+                if (studentsTable.isEditing()) {
+                    studentsTableModel.removeRow(row);
+                } else if (materialsTable.isEditing()) {
+                    materialsTableModel.removeRow(row);
+                }
+            }
+        }
+    }
+}
+
+--------------AnalyticsPanel.java--------------
+package iems.ui;
+
+import iems.model.User;
+import javax.swing.*;
+import java.awt.*;
+
+public class AnalyticsPanel extends JPanel {
+    public AnalyticsPanel(User user) {
+        setLayout(new BorderLayout());
+        setBackground(new Color(241, 245, 249));
+        add(new JLabel("Analytics Panel - " + user.getFullName(), SwingConstants.CENTER), BorderLayout.CENTER);
+    }
+}
+
+---------------AssignmentsPanel.java--------------
+package iems.ui;
+
+import iems.model.User;
+import javax.swing.*;
+import java.awt.*;
+
+public class AssignmentsPanel extends JPanel {
+    public AssignmentsPanel(User user) {
+        setLayout(new BorderLayout());
+        setBackground(new Color(241, 245, 249));
+        add(new JLabel("Assignments Panel - " + user.getFullName(), SwingConstants.CENTER), BorderLayout.CENTER);
+    }
+}
+
+------------CommunicationsPanel.java---------------
+package iems.ui;
+
+import iems.model.User;
+import javax.swing.*;
+import java.awt.*;
+
+public class CommunicationsPanel extends JPanel {
+    public CommunicationsPanel(User user) {
+        setLayout(new BorderLayout());
+        setBackground(new Color(241, 245, 249));
+        add(new JLabel("Communications Panel - " + user.getFullName(), SwingConstants.CENTER), BorderLayout.CENTER);
+    }
+}
+
+--------------DashboardFrame.java-----------------
+package iems.ui;
+
+import iems.model.User;
+import iems.model.Role;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.geom.*; // Add this import
+import javax.swing.border.EmptyBorder;
+
+public class DashboardFrame extends JFrame {
+    private final CardLayout cards = new CardLayout();
+    private final JPanel content = new JPanel(cards);
+    private JButton activeNavButton = null;
+    private final User user;
+
+    // Updated color scheme for better visibility (like in the image)
+    private static final Color SIDEBAR_BG = new Color(30, 41, 59); // Dark blue sidebar
+    private static final Color NAV_INACTIVE_TEXT = new Color(200, 210, 220); // Much brighter for visibility
+    private static final Color NAV_INACTIVE_BG = new Color(30, 41, 59); // Same as sidebar
+    private static final Color NAV_HOVER_BG = new Color(45, 55, 75); // Slightly lighter on hover
+    private static final Color NAV_HOVER_TEXT = new Color(240, 240, 240); // Brighter on hover
+    private static final Color NAV_ACTIVE_BG = new Color(37, 99, 235); // Blue background for active
+    private static final Color NAV_ACTIVE_TEXT = Color.WHITE; // White text for active
+    private static final Color SETTINGS_COLOR = new Color(200, 210, 220); // Bright text
+    private static final Color LOGOUT_COLOR = new Color(239, 100, 100); // Brighter red
+    private static final Color MAIN_BG = new Color(241, 245, 249);
+
+    // Button border colors
+    private static final Color BUTTON_BORDER = new Color(60, 70, 90);
+    private static final Color ACTIVE_BUTTON_BORDER = new Color(96, 165, 250);
+
+    public DashboardFrame(User user) {
+        super("IEMS Dashboard - " + user.getFullName());
+        this.user = user;
+
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        setSize(1400, 800);
+        setMinimumSize(new Dimension(1200, 700));
+        setLocationRelativeTo(null);
+
+        // Handle window close
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
+                confirmAndLogout();
+            }
+        });
+
+        // Use system look and feel
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // Create main layout
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+        splitPane.setLeftComponent(createSidebar());
+        splitPane.setRightComponent(content);
+        splitPane.setDividerLocation(280);
+        splitPane.setDividerSize(1);
+        splitPane.setEnabled(false); // Prevent resizing of divider
+
+        // Set content background
+        content.setBackground(MAIN_BG);
+
+        add(splitPane, BorderLayout.CENTER);
+
+        // Initialize panels
+        initializePanels();
+
+        // Show appropriate panel
+        if (user.getRole() == Role.TEACHER) {
+            cards.show(content, "teacher");
+        } else {
+            cards.show(content, "materials");
+        }
+    }
+
+    private JPanel createSidebar() {
+        JPanel sidebar = new JPanel(new BorderLayout());
+        sidebar.setBackground(SIDEBAR_BG);
+        sidebar.setPreferredSize(new Dimension(280, 0));
+
+        // Header Panel
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(SIDEBAR_BG);
+        headerPanel.setBorder(new EmptyBorder(30, 25, 30, 25));
+
+        JLabel appTitle = new JLabel("TEAMS");
+        appTitle.setFont(new Font("Segoe UI", Font.BOLD, 28));
+        appTitle.setForeground(Color.WHITE);
+
+        JLabel userLabel = new JLabel(user.getFullName());
+        userLabel.setFont(new Font("Segoe UI Semibold", Font.BOLD, 18));
+        userLabel.setForeground(Color.WHITE);
+
+        JLabel roleLabel = new JLabel(user.getRole().toString().toUpperCase());
+        roleLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        roleLabel.setForeground(new Color(148, 163, 184));
+
+        JPanel userInfoPanel = new JPanel(new GridLayout(3, 1, 5, 5));
+        userInfoPanel.setBackground(SIDEBAR_BG);
+        userInfoPanel.add(appTitle);
+        userInfoPanel.add(userLabel);
+        userInfoPanel.add(roleLabel);
+
+        headerPanel.add(userInfoPanel, BorderLayout.CENTER);
+        sidebar.add(headerPanel, BorderLayout.NORTH);
+
+        // Navigation Panel
+        JPanel navPanel = new JPanel();
+        navPanel.setLayout(new BoxLayout(navPanel, BoxLayout.Y_AXIS));
+        navPanel.setBackground(SIDEBAR_BG);
+        navPanel.setBorder(new EmptyBorder(0, 20, 20, 20));
+
+        if (user.getRole() == Role.TEACHER) {
+            navPanel.add(createNavButton("Dashboard", "teacher", true));
+            navPanel.add(Box.createVerticalStrut(10));
+            navPanel.add(createNavButton("Students", "students"));
+            navPanel.add(Box.createVerticalStrut(10));
+            navPanel.add(createNavButton("Course Materials", "materials"));
+            navPanel.add(Box.createVerticalStrut(10));
+            navPanel.add(createNavButton("Assignments", "assignments"));
+            navPanel.add(Box.createVerticalStrut(10));
+            navPanel.add(createNavButton("Analytics", "analytics"));
+            navPanel.add(Box.createVerticalStrut(10));
+            navPanel.add(createNavButton("Communications", "communications"));
+        } else {
+            navPanel.add(createNavButton("Learning Materials", "materials", true));
+            navPanel.add(Box.createVerticalStrut(10));
+            navPanel.add(createNavButton("Tutoring Programs", "tutoring"));
+            navPanel.add(Box.createVerticalStrut(10));
+            navPanel.add(createNavButton("Educational Support", "support"));
+        }
+
+        // Add scroll pane for navigation if needed
+        JScrollPane navScroll = new JScrollPane(navPanel);
+        navScroll.setBorder(null);
+        navScroll.getViewport().setBackground(SIDEBAR_BG);
+        navScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        sidebar.add(navScroll, BorderLayout.CENTER);
+
+        // Bottom Panel (Settings & Logout)
+        JPanel bottomPanel = new JPanel(new BorderLayout());
+        bottomPanel.setBackground(SIDEBAR_BG);
+        bottomPanel.setBorder(new EmptyBorder(0, 20, 30, 20));
+
+        JPanel bottomButtons = new JPanel(new GridLayout(2, 1, 10, 10));
+        bottomButtons.setBackground(SIDEBAR_BG);
+        bottomButtons.add(createSettingsButton());
+        bottomButtons.add(createLogoutButton());
+
+        bottomPanel.add(bottomButtons, BorderLayout.CENTER);
+        sidebar.add(bottomPanel, BorderLayout.SOUTH);
+
+        return sidebar;
+    }
+
+    // Add this overloaded method
+    private JButton createNavButton(String text, String panelId) {
+        return createNavButton(text, panelId, false);
+    }
+
+    private JButton createNavButton(String text, String panelId, boolean active) {
+        JButton button = new JButton(text);
+        button.setAlignmentX(Component.LEFT_ALIGNMENT);
+        button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 45));
+        button.setPreferredSize(new Dimension(240, 45));
+        button.setFont(new Font("Segoe UI", active ? Font.BOLD : Font.PLAIN, 14));
+        button.setFocusPainted(false);
+        button.setHorizontalAlignment(SwingConstants.LEFT);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(active ? ACTIVE_BUTTON_BORDER : Color.WHITE, 0), // No border like in
+                                                                                                // image
+                new EmptyBorder(12, 20, 12, 20) // More left padding
+        ));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setOpaque(true);
+
+        if (active) {
+            activeNavButton = button;
+            button.setBackground(NAV_ACTIVE_BG);
+            button.setForeground(NAV_ACTIVE_TEXT);
+        } else {
+            button.setBackground(NAV_INACTIVE_BG);
+            button.setForeground(NAV_INACTIVE_TEXT); // Use brighter text color
+        }
+
+        // Hover effects
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                if (button != activeNavButton) {
+                    button.setBackground(NAV_HOVER_BG);
+                    button.setForeground(NAV_HOVER_TEXT); // Even brighter on hover
+                }
+            }
+
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                if (button != activeNavButton) {
+                    button.setBackground(NAV_INACTIVE_BG);
+                    button.setForeground(NAV_INACTIVE_TEXT); // Back to bright text
+                }
+            }
+        });
+
+        button.addActionListener(e -> {
+            if (activeNavButton != null) {
+                activeNavButton.setBackground(NAV_INACTIVE_BG);
+                activeNavButton.setForeground(NAV_INACTIVE_TEXT);
+                activeNavButton.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+            }
+
+            activeNavButton = button;
+            button.setBackground(NAV_ACTIVE_BG);
+            button.setForeground(NAV_ACTIVE_TEXT);
+            button.setFont(new Font("Segoe UI", Font.BOLD, 14));
+
+            cards.show(content, panelId);
+        });
+
+        return button;
+    }
+
+    private JButton createSettingsButton() {
+        JButton button = new JButton("Settings");
+        button.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        button.setForeground(SETTINGS_COLOR);
+        button.setBackground(new Color(60, 70, 90)); // Darker background for settings
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(80, 90, 110), 1),
+                new EmptyBorder(10, 15, 10, 15)));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                button.setBackground(new Color(80, 90, 110));
+                button.setForeground(Color.WHITE);
+            }
+
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                button.setBackground(new Color(60, 70, 90));
+                button.setForeground(SETTINGS_COLOR);
+            }
+        });
+
+        button.addActionListener(e -> {
+            if (activeNavButton != null) {
+                activeNavButton.setBackground(NAV_INACTIVE_BG);
+                activeNavButton.setForeground(NAV_INACTIVE_TEXT);
+                activeNavButton.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+            }
+            activeNavButton = button;
+            cards.show(content, "settings");
+        });
+
+        return button;
+    }
+
+    private JButton createLogoutButton() {
+        JButton button = new JButton("Logout");
+        button.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        button.setForeground(LOGOUT_COLOR);
+        button.setBackground(new Color(60, 70, 90));
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(80, 90, 110), 1),
+                new EmptyBorder(10, 15, 10, 15)));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                button.setBackground(new Color(80, 90, 110));
+                button.setForeground(Color.WHITE);
+            }
+
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                button.setBackground(new Color(60, 70, 90));
+                button.setForeground(LOGOUT_COLOR);
+            }
+        });
+
+        button.addActionListener(e -> confirmAndLogout());
+
+        return button;
+    }
+
+    private void initializePanels() {
+        if (user.getRole() == Role.TEACHER) {
+            content.add(new TeacherDashboardPanel(user), "teacher");
+            content.add(new StudentsPanel(user), "students");
+            content.add(new TeacherMaterialsPanel(user), "materials");
+            content.add(new AssignmentsPanel(user), "assignments");
+            content.add(new AnalyticsPanel(user), "analytics");
+            content.add(new CommunicationsPanel(user), "communications");
+        } else {
+            // Create placeholder panels for student view
+            content.add(createPlaceholderPanel("Student Materials"), "materials");
+            content.add(createPlaceholderPanel("Tutoring Programs"), "tutoring");
+            content.add(createPlaceholderPanel("Educational Support"), "support");
+        }
+
+        content.add(new SettingsPanel(user, this), "settings");
+    }
+
+    private JPanel createPlaceholderPanel(String title) {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(MAIN_BG);
+
+        JLabel label = new JLabel(title + " - " + user.getFullName(), SwingConstants.CENTER);
+        label.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        label.setForeground(SIDEBAR_BG);
+
+        panel.add(label, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private void confirmAndLogout() {
+        int response = JOptionPane.showConfirmDialog(
+                this,
+                "Are you sure you want to logout, " + user.getFullName() + "?",
+                "Confirm Logout",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+
+        if (response == JOptionPane.YES_OPTION) {
+            dispose();
+            showLoginPanel();
+        }
+    }
+
+    private void showLoginPanel() {
+        SwingUtilities.invokeLater(() -> {
+            try {
+                UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+            JFrame loginFrame = new JFrame("Inclusive Education Management System");
+            loginFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+            loginFrame.setSize(500, 550);
+            loginFrame.setLocationRelativeTo(null);
+
+            JPanel mainPanel = new JPanel(new BorderLayout()) {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    super.paintComponent(g);
+                    Graphics2D g2 = (Graphics2D) g;
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                    GradientPaint gp = new GradientPaint(
+                            0, 0, new Color(59, 130, 246),
+                            0, getHeight(), new Color(14, 165, 233));
+                    g2.setPaint(gp);
+                    g2.fillRect(0, 0, getWidth(), getHeight());
+                }
+            };
+
+            LoginPanel login = new LoginPanel(
+                    user -> {
+                        try {
+                            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                        loginFrame.dispose();
+                        new DashboardFrame(user).setVisible(true);
+                    },
+                    () -> {
+                        JDialog registerDialog = new JDialog(loginFrame, "Register", true);
+                        RegisterPanel reg = new RegisterPanel(u -> {
+                            registerDialog.dispose();
+                            JOptionPane.showMessageDialog(loginFrame,
+                                    "Account created. You can now log in.",
+                                    "Registration Successful",
+                                    JOptionPane.INFORMATION_MESSAGE);
+                        });
+                        registerDialog.setContentPane(reg);
+                        registerDialog.pack();
+                        registerDialog.setSize(600, 700);
+                        registerDialog.setLocationRelativeTo(loginFrame);
+                        registerDialog.setVisible(true);
+                    });
+
+            mainPanel.add(login, BorderLayout.CENTER);
+            loginFrame.setContentPane(mainPanel);
+            loginFrame.setVisible(true);
+        });
+    }
+}
+
+---------MaterialsPanel.java------------
+// Updated MaterialsPanel.java template
+package iems.ui;
+
+import iems.model.User;
+import javax.swing.*;
+import java.awt.*;
+
+public class MaterialsPanel extends JPanel {
+    public MaterialsPanel(User user) {
+        setLayout(new BorderLayout());
+        setBackground(Color.WHITE);
+
+        // Header
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(Color.WHITE);
+        header.setBorder(BorderFactory.createEmptyBorder(25, 35, 25, 35));
+
+        JLabel title = new JLabel("Learning Materials");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 28));
+        title.setForeground(new Color(30, 41, 59));
+
+        header.add(title, BorderLayout.WEST);
+        add(header, BorderLayout.NORTH);
+
+        // Content
+        JPanel content = new JPanel(new GridBagLayout());
+        content.setBackground(Color.WHITE);
+        content.setBorder(BorderFactory.createEmptyBorder(50, 50, 50, 50));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.insets = new Insets(20, 20, 20, 20);
+
+        // Add material cards or table here
+
+        add(content, BorderLayout.CENTER);
+    }
+}
+
+--------SettingsPanel.java----------
+package iems.ui;
+
+import iems.model.User;
+import javax.swing.*;
+import java.awt.*;
+
+public class SettingsPanel extends JPanel {
+    public SettingsPanel(User user, DashboardFrame frame) {
+        setLayout(new BorderLayout());
+        setBackground(new Color(241, 245, 249));
+        add(new JLabel("Settings Panel - " + user.getFullName(), SwingConstants.CENTER), BorderLayout.CENTER);
+    }
+}
+
+--------StudentsPanel.java----------
+package iems.ui;
+
+import iems.model.User;
+import javax.swing.*;
+import java.awt.*;
+
+public class StudentsPanel extends JPanel {
+    public StudentsPanel(User user) {
+        setLayout(new BorderLayout());
+        setBackground(new Color(241, 245, 249));
+        add(new JLabel("Students Panel - " + user.getFullName(), SwingConstants.CENTER), BorderLayout.CENTER);
+    }
+}
+
+--------SupportPanel.java----------
+package iems.ui;
+
+import iems.dao.SupportDAO;
+import iems.model.Role;
+import iems.model.SupportRequest;
+import iems.model.User;
+
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.List;
+
+public class SupportPanel extends JPanel {
+    private final User user;
+    private final JTable table;
+    private final DefaultTableModel model;
+    private final JButton newRequestBtn = styledButton("➕ New Request", new Color(34, 139, 34));
+    private final JButton exportBtn = styledButton("📤 Export CSV", new Color(70, 130, 180));
+    private final JButton reviewBtn = styledButton("✔ Review Selected", new Color(105, 105, 105));
+    private final JComboBox<String> statusFilter = new JComboBox<>(
+            new String[] { "All", "Draft", "Submitted", "Under Review", "Approved", "Rejected" });
+
+    public SupportPanel(User user) {
+        this.user = user;
+        setLayout(new BorderLayout(8, 8));
+
+        // Header
+        JLabel title = new JLabel("Educational Support Requests");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        title.setHorizontalAlignment(SwingConstants.CENTER);
+        title.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        add(title, BorderLayout.NORTH);
+
+        // Filter bar
+        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+        top.setBorder(BorderFactory.createTitledBorder("Filters & Actions"));
+        top.add(new JLabel("Status filter"));
+        top.add(statusFilter);
+        top.add(newRequestBtn);
+        top.add(exportBtn);
+        if (user.getRole() == Role.STAFF || user.getRole() == Role.TEACHER) {
+            top.add(reviewBtn);
+        }
+        add(top, BorderLayout.SOUTH);
+
+        // Table setup
+        model = new DefaultTableModel(new String[] { "ID", "Type", "Status", "Notes" }, 0) {
+            public boolean isCellEditable(int r, int c) {
+                return false;
+            }
+        };
+        table = new JTable(model);
+        table.setRowHeight(28);
+        table.setShowGrid(false);
+        table.setIntercellSpacing(new Dimension(0, 0));
+        table.setSelectionBackground(new Color(220, 240, 255));
+        table.setFillsViewportHeight(true);
+
+        JScrollPane scroll = new JScrollPane(table);
+        scroll.setBorder(BorderFactory.createEmptyBorder());
+        add(scroll, BorderLayout.CENTER);
+
+        reload();
+
+        // Listeners
+        statusFilter.addActionListener(e -> applyFilter());
+        newRequestBtn.addActionListener(e -> createRequest());
+        exportBtn.addActionListener(e -> exportCsv());
+        reviewBtn.addActionListener(e -> reviewSelected());
+    }
+
+    private void reload() {
+        try {
+            model.setRowCount(0);
+            SupportDAO dao = new SupportDAO();
+            List<SupportRequest> data = (user.getRole() == Role.STAFF || user.getRole() == Role.TEACHER)
+                    ? dao.all()
+                    : dao.forUser(user.getId());
+            for (SupportRequest r : data) {
+                model.addRow(new Object[] { r.getId(), r.getType(), r.getStatus(), r.getNotes() });
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                    "Database Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void applyFilter() {
+        String sf = (String) statusFilter.getSelectedItem();
+        for (int i = 0; i < model.getRowCount(); i++) {
+            String st = model.getValueAt(i, 2).toString();
+            boolean show = "All".equals(sf) || sf.equals(st);
+            table.setRowHeight(i, show ? 28 : 0);
+        }
+    }
+
+    private void createRequest() {
+        JComboBox<String> type = new JComboBox<>(new String[] {
+                "Device loan", "Learning vouchers", "Transport assistance", "Fees assistance", "Special needs support"
+        });
+        JTextArea notes = new JTextArea(4, 24);
+        notes.setLineWrap(true);
+        notes.setWrapStyleWord(true);
+
+        int result = JOptionPane.showConfirmDialog(this,
+                new Object[] { "Type", type, "Notes (optional)", new JScrollPane(notes) },
+                "New Support Request", JOptionPane.OK_CANCEL_OPTION);
+
+        if (result == JOptionPane.OK_OPTION) {
+            try {
+                SupportRequest r = new SupportRequest();
+                r.setUserId(user.getId());
+                r.setType((String) type.getSelectedItem());
+                r.setStatus("Submitted");
+                r.setNotes(notes.getText().trim());
+                new SupportDAO().create(r);
+                reload();
+                JOptionPane.showMessageDialog(this, "Request submitted successfully!",
+                        "Success", JOptionPane.INFORMATION_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                        "Submission Failed", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private void reviewSelected() {
+        if (!(user.getRole() == Role.STAFF || user.getRole() == Role.TEACHER)) {
+            JOptionPane.showMessageDialog(this, "Only staff/teachers can review.",
+                    "Access Denied", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int row = table.getSelectedRow();
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "Select a request to review.",
+                    "No Selection", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        long id = Long.parseLong(model.getValueAt(row, 0).toString());
+        JComboBox<String> status = new JComboBox<>(new String[] { "Under Review", "Approved", "Rejected" });
+        int result = JOptionPane.showConfirmDialog(this, new Object[] { "New status", status },
+                "Update Status", JOptionPane.OK_CANCEL_OPTION);
+
+        if (result == JOptionPane.OK_OPTION) {
+            try {
+                new SupportDAO().updateStatus(id, (String) status.getSelectedItem());
+                reload();
+                JOptionPane.showMessageDialog(this, "Status updated successfully!",
+                        "Success", JOptionPane.INFORMATION_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                        "Update Failed", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private void exportCsv() {
+        try (var w = new FileWriter("support_requests.csv")) {
+            w.write("ID,Type,Status,Notes\n");
+            for (int i = 0; i < model.getRowCount(); i++) {
+                if (table.getRowHeight(i) == 0)
+                    continue;
+                w.write(String.join(",",
+                        model.getValueAt(i, 0).toString(),
+                        escape(model.getValueAt(i, 1).toString()),
+                        model.getValueAt(i, 2).toString(),
+                        escape(model.getValueAt(i, 3).toString())) + "\n");
+            }
+            JOptionPane.showMessageDialog(this, "Exported support_requests.csv",
+                    "Export Complete", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                    "Export Failed", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private String escape(String s) {
+        return s.replace(",", ";");
+    }
+
+    private static JButton styledButton(String text, Color bg) {
+        JButton btn = new JButton(text);
+        btn.setBackground(bg);
+        btn.setForeground(Color.WHITE);
+        btn.setFocusPainted(false);
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        btn.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
+        return btn;
+    }
+}
+
+--------TeacherMaterialsPanel.java---------
+package iems.ui;
+
+import iems.model.User;
+import javax.swing.*;
+import java.awt.*;
+
+public class TeacherMaterialsPanel extends JPanel {
+    public TeacherMaterialsPanel(User user) {
+        setLayout(new BorderLayout());
+        setBackground(new Color(241, 245, 249));
+        add(new JLabel("Teacher Materials Panel - " + user.getFullName(), SwingConstants.CENTER), BorderLayout.CENTER);
+    }
+}
+
+----------TutoringPanel.java----------
+package iems.ui;
+
+import iems.dao.TutoringDAO;
+import iems.dao.TutoringSignupDAO;
+import iems.model.Role;
+import iems.model.TutoringProgram;
+import iems.model.TutoringSignup;
+import iems.model.User;
+import iems.util.SimpleDocListener;
+
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.Optional;
+
+public class TutoringPanel extends JPanel {
+    private final JTable programTable;
+    private final DefaultTableModel programModel;
+    private final JTable signupTable;
+    private final DefaultTableModel signupModel;
+    private final JComboBox<String> modalityFilter = new JComboBox<>(new String[] { "All", "Online", "In-person" });
+    private final JTextField subjectSearch = new JTextField(16);
+    private final JButton signupBtn = styledButton("✔ Sign up", new Color(34, 139, 34));
+    private final JButton addProgramBtn = styledButton("➕ Add Program", new Color(70, 130, 180));
+    private final JButton exportCsv = styledButton("📤 Export Signups", new Color(105, 105, 105));
+
+    private final User user;
+
+    public TutoringPanel(User user) {
+        this.user = user;
+        setLayout(new BorderLayout(8, 8));
+
+        // Header
+        JLabel title = new JLabel("Tutoring Programs & Signups");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        title.setHorizontalAlignment(SwingConstants.CENTER);
+        title.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        add(title, BorderLayout.NORTH);
+
+        // Filter bar
+        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+        top.setBorder(BorderFactory.createTitledBorder("Filters & Actions"));
+        top.add(new JLabel("Subject search"));
+        top.add(subjectSearch);
+        top.add(new JLabel("Modality"));
+        top.add(modalityFilter);
+        top.add(signupBtn);
+        if (user.getRole() == Role.TEACHER || user.getRole() == Role.STAFF) {
+            top.add(addProgramBtn);
+        }
+        top.add(exportCsv);
+        add(top, BorderLayout.SOUTH);
+
+        // Program table
+        programModel = new DefaultTableModel(new String[] { "ID", "Subject", "Modality", "Schedule", "Seats" }, 0) {
+            public boolean isCellEditable(int r, int c) {
+                return false;
+            }
+        };
+        programTable = new JTable(programModel);
+        styleTable(programTable);
+
+        // Signup table
+        signupModel = new DefaultTableModel(new String[] { "SignupID", "ProgramID", "Subject", "Status" }, 0) {
+            public boolean isCellEditable(int r, int c) {
+                return false;
+            }
+        };
+        signupTable = new JTable(signupModel);
+        styleTable(signupTable);
+
+        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
+                new JScrollPane(programTable), new JScrollPane(signupTable));
+        split.setDividerLocation(300);
+        add(split, BorderLayout.CENTER);
+
+        reloadPrograms();
+        reloadSignups();
+
+        subjectSearch.getDocument().addDocumentListener((SimpleDocListener) e -> applyFilter());
+        modalityFilter.addActionListener(e -> applyFilter());
+
+        signupBtn.addActionListener(e -> signUpToSelected());
+        addProgramBtn.addActionListener(e -> addProgramDialog());
+        exportCsv.addActionListener(e -> exportSignupsCsv());
+    }
+
+    private void reloadPrograms() {
+        try {
+            programModel.setRowCount(0);
+            for (TutoringProgram t : new TutoringDAO().all()) {
+                programModel.addRow(new Object[] { t.getId(), t.getSubject(), t.getModality(), t.getSchedule(),
+                        t.getSeatsAvailable() });
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                    "Database Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void reloadSignups() {
+        try {
+            signupModel.setRowCount(0);
+            TutoringDAO tdao = new TutoringDAO();
+            for (TutoringSignup s : new TutoringSignupDAO().forUser(user.getId())) {
+                Optional<TutoringProgram> prog = tdao.findById(s.getProgramId());
+                String subject = prog.map(TutoringProgram::getSubject).orElse("N/A");
+                signupModel.addRow(new Object[] { s.getId(), s.getProgramId(), subject, s.getStatus() });
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                    "Database Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void applyFilter() {
+        String query = subjectSearch.getText().toLowerCase();
+        String modality = (String) modalityFilter.getSelectedItem();
+        for (int i = 0; i < programModel.getRowCount(); i++) {
+            String subj = programModel.getValueAt(i, 1).toString().toLowerCase();
+            String mod = programModel.getValueAt(i, 2).toString();
+            boolean show = (query.isEmpty() || subj.contains(query)) &&
+                    ("All".equals(modality) || modality.equals(mod));
+            programTable.setRowHeight(i, show ? 28 : 0);
+        }
+    }
+
+    private void signUpToSelected() {
+        int row = programTable.getSelectedRow();
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "Select a program to sign up.",
+                    "No Selection", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        long progId = Long.parseLong(programModel.getValueAt(row, 0).toString());
+        int seats = Integer.parseInt(programModel.getValueAt(row, 4).toString());
+        try {
+            TutoringDAO tdao = new TutoringDAO();
+            TutoringSignupDAO sdao = new TutoringSignupDAO();
+            String status;
+            if (seats > 0) {
+                tdao.updateSeats(progId, seats - 1);
+                status = "Registered";
+            } else {
+                status = "Waitlisted";
+            }
+            sdao.create(progId, user.getId(), status);
+            reloadPrograms();
+            reloadSignups();
+            JOptionPane.showMessageDialog(this, "Signup " + status + ".",
+                    "Success", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                    "Signup Failed", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void addProgramDialog() {
+        JTextField subj = new JTextField();
+        JComboBox<String> mod = new JComboBox<>(new String[] { "Online", "In-person" });
+        JTextField sched = new JTextField("Sat 9:00–11:00");
+        JSpinner seats = new JSpinner(new SpinnerNumberModel(20, 0, 500, 1));
+
+        int result = JOptionPane.showConfirmDialog(this,
+                new Object[] { "Subject", subj, "Modality", mod, "Schedule", sched, "Seats", seats },
+                "Add Tutoring Program", JOptionPane.OK_CANCEL_OPTION);
+
+        if (result == JOptionPane.OK_OPTION) {
+            try {
+                TutoringProgram t = new TutoringProgram();
+                t.setSubject(subj.getText().trim());
+                t.setModality((String) mod.getSelectedItem());
+                t.setSchedule(sched.getText().trim());
+                t.setSeatsAvailable((Integer) seats.getValue());
+                new TutoringDAO().create(t);
+                reloadPrograms();
+                JOptionPane.showMessageDialog(this, "Program added successfully!",
+                        "Success", JOptionPane.INFORMATION_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                        "Add Failed", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private void exportSignupsCsv() {
+        try (var w = new FileWriter("tutoring_signups.csv")) {
+            w.write("SignupID,ProgramID,Subject,Status\n");
+            for (int i = 0; i < signupModel.getRowCount(); i++) {
+                w.write(String.join(",",
+                        signupModel.getValueAt(i, 0).toString(),
+                        signupModel.getValueAt(i, 1).toString(),
+                        escape(signupModel.getValueAt(i, 2).toString()),
+                        signupModel.getValueAt(i, 3).toString()) + "\n");
+            }
+            JOptionPane.showMessageDialog(this,
+                    "Exported tutoring_signups.csv",
+                    "Export Complete",
+                    JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Error: " + ex.getMessage(),
+                    "Export Failed",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private String escape(String s) {
+        return s.replace(",", ";");
+    }
+
+    private static JButton styledButton(String text, Color bg) {
+        JButton btn = new JButton(text);
+        btn.setBackground(bg);
+        btn.setForeground(Color.WHITE);
+        btn.setFocusPainted(false);
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        btn.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
+        return btn;
+    }
+
+    private static void styleTable(JTable table) {
+        table.setRowHeight(28);
+        table.setShowGrid(false);
+        table.setIntercellSpacing(new Dimension(0, 0));
+        table.setSelectionBackground(new Color(220, 240, 255));
+        table.setFillsViewportHeight(true);
+    }
+}
+
+----------UIStyle.java----------
+package iems.ui;
+
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import java.awt.*;
+
+public final class UIStyle {
+    private UIStyle() {
+    }
+
+    public static final Font TITLE = new Font("Segoe UI", Font.BOLD, 20);
+    public static final Font SECTION = new Font("Segoe UI", Font.BOLD, 16);
+    public static final Font BODY = new Font("Segoe UI", Font.PLAIN, 14);
+
+    public static JPanel page() {
+        JPanel p = new JPanel(new BorderLayout(12, 12));
+        p.setBorder(new EmptyBorder(16, 16, 16, 16));
+        p.setBackground(Color.WHITE);
+        return p;
+    }
+
+    public static JLabel title(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(TITLE);
+        return l;
+    }
+
+    public static JButton primary(String text) {
+        return button(text, new Color(70, 130, 180));
+    }
+
+    public static JButton success(String text) {
+        return button(text, new Color(34, 139, 34));
+    }
+
+    public static JButton button(String text, Color bg) {
+        JButton b = new JButton(text);
+        b.setFont(BODY);
+        b.setBackground(bg);
+        b.setForeground(Color.WHITE);
+        b.setFocusPainted(false);
+        b.setBorder(new EmptyBorder(8, 16, 8, 16));
+        return b;
+    }
+
+    public static void styleTable(JTable t) {
+        t.setRowHeight(30);
+        t.setShowGrid(false);
+        t.setIntercellSpacing(new Dimension(0, 0));
+        t.setSelectionBackground(new Color(220, 240, 255));
+        t.setFont(BODY);
+    }
+}
+
+----------Db.java----------
+package iems.dao;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+
+public class Db {
+    private static Connection conn;
+
+    // Initialize MySQL connection
+    public static void init(String url, String user, String pass) throws SQLException {
+        conn = DriverManager.getConnection(url, user, pass);
+    }
+
+    public static Connection get() {
+        return conn;
+    }
+}
+
+--------MaterialDAO.java--------
+package iems.dao;
+
+import iems.model.Material;
+
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+
+public class MaterialDAO {
+    public List<Material> all() throws SQLException {
+        try (Statement st = Db.get().createStatement()) {
+            ResultSet rs = st.executeQuery("SELECT * FROM materials");
+            List<Material> list = new ArrayList<>();
+            while (rs.next())
+                list.add(map(rs));
+            return list;
+        }
+    }
+
+    public void create(Material m) throws SQLException {
+        String sql = "INSERT INTO materials(title,topic,level,format,url) VALUES(?,?,?,?,?)";
+        try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+            ps.setString(1, m.getTitle());
+            ps.setString(2, m.getTopic());
+            ps.setString(3, m.getLevel());
+            ps.setString(4, m.getFormat());
+            ps.setString(5, m.getUrlOrPath());
+            ps.executeUpdate();
+        }
+    }
+
+    private Material map(ResultSet rs) throws SQLException {
+        Material m = new Material();
+        m.setId(rs.getLong("id"));
+        m.setTitle(rs.getString("title"));
+        m.setTopic(rs.getString("topic"));
+        m.setLevel(rs.getString("level"));
+        m.setFormat(rs.getString("format"));
+        m.setUrlOrPath(rs.getString("url"));
+        return m;
+    }
+}
+
+---------SupportDAO.java---------
+package iems.dao;
+
+import iems.model.SupportRequest;
+
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+
+public class SupportDAO {
+    public void create(SupportRequest r) throws SQLException {
+        String sql = "INSERT INTO support_requests(user_id,type,status,notes) VALUES(?,?,?,?)";
+        try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+            ps.setLong(1, r.getUserId());
+            ps.setString(2, r.getType());
+            ps.setString(3, r.getStatus());
+            ps.setString(4, r.getNotes());
+            ps.executeUpdate();
+        }
+    }
+
+    public List<SupportRequest> forUser(long userId) throws SQLException {
+        String sql = "SELECT * FROM support_requests WHERE user_id=?";
+        try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+            ps.setLong(1, userId);
+            ResultSet rs = ps.executeQuery();
+            List<SupportRequest> list = new ArrayList<>();
+            while (rs.next())
+                list.add(map(rs));
+            return list;
+        }
+    }
+
+    public List<SupportRequest> all() throws SQLException {
+        try (Statement st = Db.get().createStatement()) {
+            ResultSet rs = st.executeQuery("SELECT * FROM support_requests");
+            List<SupportRequest> list = new ArrayList<>();
+            while (rs.next())
+                list.add(map(rs));
+            return list;
+        }
+    }
+
+    public void updateStatus(long id, String status) throws SQLException {
+        try (PreparedStatement ps = Db.get().prepareStatement("UPDATE support_requests SET status=? WHERE id=?")) {
+            ps.setString(1, status);
+            ps.setLong(2, id);
+            ps.executeUpdate();
+        }
+    }
+
+    private SupportRequest map(ResultSet rs) throws SQLException {
+        SupportRequest r = new SupportRequest();
+        r.setId(rs.getLong("id"));
+        r.setUserId(rs.getLong("user_id"));
+        r.setType(rs.getString("type"));
+        r.setStatus(rs.getString("status"));
+        r.setNotes(rs.getString("notes"));
+        return r;
+    }
+}
+
+--------TutoringDAO.java--------
+package iems.dao;
+
+import iems.model.TutoringProgram;
+
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+public class TutoringDAO {
+    public List<TutoringProgram> all() throws SQLException {
+        try (Statement st = Db.get().createStatement()) {
+            ResultSet rs = st.executeQuery("SELECT * FROM tutoring_programs");
+            List<TutoringProgram> list = new ArrayList<>();
+            while (rs.next())
+                list.add(map(rs));
+            return list;
+        }
+    }
+
+    public void create(TutoringProgram t) throws SQLException {
+        String sql = "INSERT INTO tutoring_programs(subject,modality,schedule,seats) VALUES(?,?,?,?)";
+        try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+            ps.setString(1, t.getSubject());
+            ps.setString(2, t.getModality());
+            ps.setString(3, t.getSchedule());
+            ps.setInt(4, t.getSeatsAvailable());
+            ps.executeUpdate();
+        }
+    }
+
+    public Optional<TutoringProgram> findById(long id) throws SQLException {
+        String sql = "SELECT * FROM tutoring_programs WHERE id=?";
+        try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+            ps.setLong(1, id);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next())
+                return Optional.of(map(rs));
+        }
+        return Optional.empty();
+    }
+
+    public void updateSeats(long id, int newSeats) throws SQLException {
+        try (PreparedStatement ps = Db.get().prepareStatement("UPDATE tutoring_programs SET seats=? WHERE id=?")) {
+            ps.setInt(1, newSeats);
+            ps.setLong(2, id);
+            ps.executeUpdate();
+        }
+    }
+
+    private TutoringProgram map(ResultSet rs) throws SQLException {
+        TutoringProgram t = new TutoringProgram();
+        t.setId(rs.getLong("id"));
+        t.setSubject(rs.getString("subject"));
+        t.setModality(rs.getString("modality"));
+        t.setSchedule(rs.getString("schedule"));
+        t.setSeatsAvailable(rs.getInt("seats"));
+        return t;
+    }
+}
+
+--------TutoringSignupDAO.java--------
+package iems.dao;
+
+import iems.model.TutoringSignup;
+
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+
+public class TutoringSignupDAO {
+    public List<TutoringSignup> forUser(long userId) throws SQLException {
+        String sql = "SELECT * FROM tutoring_signups WHERE user_id=?";
+        try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+            ps.setLong(1, userId);
+            ResultSet rs = ps.executeQuery();
+            List<TutoringSignup> list = new ArrayList<>();
+            while (rs.next())
+                list.add(map(rs));
+            return list;
+        }
+    }
+
+    public void create(long programId, long userId, String status) throws SQLException {
+        String sql = "INSERT INTO tutoring_signups(program_id,user_id,status) VALUES(?,?,?)";
+        try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+            ps.setLong(1, programId);
+            ps.setLong(2, userId);
+            ps.setString(3, status);
+            ps.executeUpdate();
+        }
+    }
+
+    private TutoringSignup map(ResultSet rs) throws SQLException {
+        TutoringSignup s = new TutoringSignup();
+        s.setId(rs.getLong("id"));
+        s.setProgramId(rs.getLong("program_id"));
+        s.setUserId(rs.getLong("user_id"));
+        s.setStatus(rs.getString("status"));
+        return s;
+    }
+}
+
+--------UserDAO.java---------
+package iems.dao;
+
+import iems.model.Role;
+import iems.model.User;
+import java.sql.*;
+import java.util.Optional;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.List;
+
+public class UserDAO {
+
+    // SHA-256 password hashing - HEXADECIMAL VERSION
+    private String hashPassword(String password) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(password.getBytes(StandardCharsets.UTF_8));
+
+            // Use Hexadecimal encoding
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("Error hashing password", e);
+        }
+    }
+
+    // Authentication method
+    public User authenticate(String email, String password) throws SQLException {
+        Optional<User> userOpt = findByEmail(email);
+
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            String hashedInputPassword = hashPassword(password);
+
+            // Debug output
+            System.out.println("=== DEBUG AUTHENTICATION ===");
+            System.out.println("Email: " + email);
+            System.out.println("User found: " + user.getFullName());
+            System.out.println("Role: " + user.getRole());
+            System.out.println("Stored hash: " + user.getPasswordHash());
+            System.out.println("Input hash: " + hashedInputPassword);
+            System.out.println("Hash match: " + hashedInputPassword.equals(user.getPasswordHash()));
+            System.out.println("===========================");
+
+            if (hashedInputPassword.equals(user.getPasswordHash())) {
+                return user;
+            }
+        } else {
+            System.out.println("=== DEBUG AUTHENTICATION ===");
+            System.out.println("Email: " + email + " NOT FOUND in database!");
+            System.out.println("===========================");
+        }
+        return null;
+    }
+
+    // CREATE method
+    public void create(User u) throws SQLException {
+        String sql = "INSERT INTO users(full_name, email, age, role, password_hash, " +
+                "high_contrast, font_scale, theme) VALUES(?, ?, ?, ?, ?, ?, ?, ?)";
+
+        try (PreparedStatement ps = Db.get().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, u.getFullName());
+            ps.setString(2, u.getEmail());
+            ps.setInt(3, u.getAge());
+            ps.setString(4, u.getRole().name());
+            ps.setString(5, u.getPasswordHash());
+            ps.setBoolean(6, u.isHighContrast());
+            ps.setInt(7, u.getPreferredFontScale());
+            ps.setString(8, u.getTheme());
+
+            int affectedRows = ps.executeUpdate();
+            System.out.println("DEBUG: Created user, affected rows: " + affectedRows);
+
+            // Get generated ID
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                if (rs.next()) {
+                    u.setId(rs.getLong(1));
+                    System.out.println("DEBUG: Generated user ID: " + u.getId());
+                }
+            }
+        }
+    }
+
+    // Helper method to create user with plain password (hashes it)
+    public void createUserWithHashedPassword(User u, String plainPassword) throws SQLException {
+        String hashedPassword = hashPassword(plainPassword);
+        u.setPasswordHash(hashedPassword);
+        create(u);
+    }
+
+    // FIND BY EMAIL method
+    public Optional<User> findByEmail(String email) throws SQLException {
+        String sql = "SELECT * FROM users WHERE email = ?";
+
+        System.out.println("DEBUG: Searching for email: " + email);
+
+        try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+            ps.setString(1, email);
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                System.out.println("DEBUG: User found in database!");
+                User user = map(rs);
+                System.out.println("DEBUG: Mapped user: " + user.getFullName() + ", Role: " + user.getRole());
+                return Optional.of(user);
+            } else {
+                System.out.println("DEBUG: No user found with email: " + email);
+                return Optional.empty();
+            }
+        }
+    }
+
+    // MAP method - converts ResultSet to User object
+    private User map(ResultSet rs) throws SQLException {
+        User u = new User();
+
+        // Set Person fields
+        u.setId(rs.getLong("id"));
+
+        // Split full_name into first and last names
+        String fullName = rs.getString("full_name");
+        if (fullName != null) {
+            String[] parts = fullName.trim().split("\\s+", 2);
+            u.setFirstName(parts.length > 0 ? parts[0] : "");
+            u.setLastName(parts.length > 1 ? parts[1] : "");
+        }
+
+        u.setAge(rs.getInt("age"));
+        u.setEmail(rs.getString("email"));
+
+        // Set User fields
+        String roleStr = rs.getString("role");
+        if (roleStr != null) {
+            try {
+                u.setRole(Role.valueOf(roleStr.toUpperCase()));
+            } catch (IllegalArgumentException e) {
+                System.err.println("Invalid role in database: " + roleStr + ", defaulting to LEARNER");
+                u.setRole(Role.LEARNER);
+            }
+        } else {
+            u.setRole(Role.LEARNER);
+        }
+
+        u.setPasswordHash(rs.getString("password_hash"));
+        u.setHighContrast(rs.getBoolean("high_contrast"));
+        u.setPreferredFontScale(rs.getInt("font_scale"));
+        u.setTheme(rs.getString("theme"));
+        u.setResetToken(rs.getString("reset_token"));
+
+        return u;
+    }
+
+    // ===== ADD THESE MISSING METHODS =====
+
+    // Find user by reset token
+    public Optional<User> findByResetToken(String token) throws SQLException {
+        String sql = "SELECT * FROM users WHERE reset_token = ?";
+
+        System.out.println("DEBUG: Searching for user with reset token");
+
+        try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+            ps.setString(1, token);
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                System.out.println("DEBUG: User found with reset token!");
+                User user = map(rs);
+                return Optional.of(user);
+            } else {
+                System.out.println("DEBUG: No user found with reset token");
+                return Optional.empty();
+            }
+        }
+    }
+
+    // Set reset token method
+    public void setResetToken(String email, String token) throws SQLException {
+        String sql = "UPDATE users SET reset_token = ? WHERE email = ?";
+        try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+            ps.setString(1, token);
+            ps.setString(2, email);
+            int rows = ps.executeUpdate();
+            System.out.println("DEBUG: Set reset token for " + email + ", affected rows: " + rows);
+        }
+    }
+
+    // Update password method
+    public void updatePassword(long userId, String newHash) throws SQLException {
+        String sql = "UPDATE users SET password_hash = ?, reset_token = NULL WHERE id = ?";
+        try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+            ps.setString(1, newHash);
+            ps.setLong(2, userId);
+            int rows = ps.executeUpdate();
+            System.out.println("DEBUG: Updated password for user ID " + userId + ", affected rows: " + rows);
+        }
+    }
+
+    // Update password with plain text (hashes it first)
+    public void updatePasswordWithPlainText(long userId, String plainPassword) throws SQLException {
+        String hashedPassword = hashPassword(plainPassword);
+        updatePassword(userId, hashedPassword);
+    }
+
+    // Test connection method
+    public boolean testConnection() {
+        try {
+            Connection conn = Db.get();
+            return conn != null && !conn.isClosed();
+        } catch (SQLException e) {
+            System.err.println("Database connection failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    // Get all users (for debugging)
+    public void printAllUsers() throws SQLException {
+        String sql = "SELECT id, full_name, email, role FROM users";
+        try (Statement stmt = Db.get().createStatement()) {
+            ResultSet rs = stmt.executeQuery(sql);
+            System.out.println("\n=== ALL USERS IN DATABASE ===");
+            while (rs.next()) {
+                System.out.println("ID: " + rs.getLong("id") +
+                        ", Name: " + rs.getString("full_name") +
+                        ", Email: " + rs.getString("email") +
+                        ", Role: " + rs.getString("role"));
+            }
+            System.out.println("===============================\n");
+        }
+    }
+
+    // In UserDAO.java, add this method:
+    public List<User> getAllUsers() throws SQLException {
+        List<User> users = new ArrayList<>();
+        String sql = "SELECT * FROM users";
+
+        try (Statement stmt = Db.get().createStatement()) {
+            ResultSet rs = stmt.executeQuery(sql);
+            while (rs.next()) {
+                users.add(map(rs));
+            }
+        }
+        return users;
+    }
+}
+
+--------Model--------
+--------Material.java--------
+package iems.model;
+
+public class Material {
+    private long id;
+    private String title;
+    private String topic;
+    private String level;
+    private String format;
+    private String urlOrPath;
+
+    public long getId() {
+        return id;
+    }
+
+    public void setId(long id) {
+        this.id = id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getTopic() {
+        return topic;
+    }
+
+    public void setTopic(String topic) {
+        this.topic = topic;
+    }
+
+    public String getLevel() {
+        return level;
+    }
+
+    public void setLevel(String level) {
+        this.level = level;
+    }
+
+    public String getFormat() {
+        return format;
+    }
+
+    public void setFormat(String format) {
+        this.format = format;
+    }
+
+    public String getUrlOrPath() {
+        return urlOrPath;
+    }
+
+    public void setUrlOrPath(String urlOrPath) {
+        this.urlOrPath = urlOrPath;
+    }
+}
+
+--------Person.java--------
+package iems.model;
+
+import java.util.Objects;
+
+/**
+ * Represents a person in the IEMS system.
+ * Can be extended by specific roles (e.g., User, Teacher, Staff).
+ */
+public class Person {
+    private long id;
+    private String firstName;
+    private String lastName;
+    private int age;
+    private String email;
+
+    // Constructors
+    public Person() {
+    }
+
+    public Person(long id, String firstName, String lastName, int age, String email) {
+        this.id = id;
+        this.firstName = firstName;
+        this.lastName = lastName;
+        this.age = age;
+        this.email = email;
+    }
+
+    // Getters and setters
+    public long getId() {
+        return id;
+    }
+
+    public void setId(long id) {
+        this.id = id;
+    }
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public void setFirstName(String firstName) {
+        this.firstName = firstName != null ? firstName.trim() : null;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public void setLastName(String lastName) {
+        this.lastName = lastName != null ? lastName.trim() : null;
+    }
+
+    public int getAge() {
+        return age;
+    }
+
+    public void setAge(int age) {
+        if (age < 0)
+            throw new IllegalArgumentException("Age cannot be negative");
+        this.age = age;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email != null ? email.trim() : null;
+    }
+
+    // Convenience method
+    public String getFullName() {
+        return (firstName == null ? "" : firstName) + " " + (lastName == null ? "" : lastName);
+    }
+
+    // Object overrides
+    @Override
+    public String toString() {
+        return "Person{" +
+                "id=" + id +
+                ", name='" + getFullName() + '\'' +
+                ", age=" + age +
+                ", email='" + email + '\'' +
+                '}';
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (!(o instanceof Person))
+            return false;
+        Person person = (Person) o;
+        return id == person.id &&
+                age == person.age &&
+                Objects.equals(firstName, person.firstName) &&
+                Objects.equals(lastName, person.lastName) &&
+                Objects.equals(email, person.email);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, firstName, lastName, age, email);
+    }
+}
+
+--------Role.java--------
+package iems.model;
+
+public enum Role {
+    LEARNER, // Student
+    TEACHER, // Educator
+    STAFF, // Administrative staff
+    ADMIN // System administrator
+}
+
+--------SupportRequest.java--------
+package iems.model;
+
+public class SupportRequest {
+    private long id;
+    private long userId;
+    private String type;
+    private String status;
+    private String notes;
+
+    public long getId() {
+        return id;
+    }
+
+    public void setId(long id) {
+        this.id = id;
+    }
+
+    public long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(long userId) {
+        this.userId = userId;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getNotes() {
+        return notes;
+    }
+
+    public void setNotes(String notes) {
+        this.notes = notes;
+    }
+}
+
+--------TutoringSugnup.java--------
+package iems.model;
+
+public class TutoringProgram {
+    private long id;
+    private String subject;
+    private String modality;
+    private String schedule;
+    private int seatsAvailable;
+
+    public long getId() {
+        return id;
+    }
+
+    public void setId(long id) {
+        this.id = id;
+    }
+
+    public String getSubject() {
+        return subject;
+    }
+
+    public void setSubject(String subject) {
+        this.subject = subject;
+    }
+
+    public String getModality() {
+        return modality;
+    }
+
+    public void setModality(String modality) {
+        this.modality = modality;
+    }
+
+    public String getSchedule() {
+        return schedule;
+    }
+
+    public void setSchedule(String schedule) {
+        this.schedule = schedule;
+    }
+
+    public int getSeatsAvailable() {
+        return seatsAvailable;
+    }
+
+    public void setSeatsAvailable(int seatsAvailable) {
+        this.seatsAvailable = seatsAvailable;
+    }
+}
+
+--------User.java---------
+package iems.model;
+
+public class User extends Person {
+    private Role role;
+    private String passwordHash;
+    private boolean highContrast;
+    private int preferredFontScale = 110;
+    private String theme = "light";
+    private String resetToken;
+
+    // Constructors
+    public User() {
+        super();
+    }
+
+    public User(long id, String firstName, String lastName, int age, String email,
+            Role role, String passwordHash) {
+        super(id, firstName, lastName, age, email);
+        this.role = role;
+        this.passwordHash = passwordHash;
+    }
+
+    // Getters and Setters
+    public Role getRole() {
+        return role;
+    }
+
+    public void setRole(Role role) {
+        this.role = role;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public boolean isHighContrast() {
+        return highContrast;
+    }
+
+    public void setHighContrast(boolean highContrast) {
+        this.highContrast = highContrast;
+    }
+
+    public int getPreferredFontScale() {
+        return preferredFontScale;
+    }
+
+    public void setPreferredFontScale(int preferredFontScale) {
+        this.preferredFontScale = preferredFontScale;
+    }
+
+    public String getTheme() {
+        return theme;
+    }
+
+    public void setTheme(String theme) {
+        this.theme = theme;
+    }
+
+    public String getResetToken() {
+        return resetToken;
+    }
+
+    public void setResetToken(String resetToken) {
+        this.resetToken = resetToken;
+    }
+
+    // Convenience method to get full name (already in Person class)
+    @Override
+    public String getFullName() {
+        return super.getFullName();
+    }
+
+    // Set full name by splitting into first and last names
+    public void setFullName(String fullName) {
+        if (fullName != null) {
+            String[] parts = fullName.trim().split("\\s+", 2);
+            setFirstName(parts.length > 0 ? parts[0] : "");
+            setLastName(parts.length > 1 ? parts[1] : "");
+        }
+    }
+
+    // Additional getters/setters for compatibility
+    public String getEmail() {
+        return super.getEmail();
+    }
+
+    public void setEmail(String email) {
+        super.setEmail(email);
+    }
+
+    public int getAge() {
+        return super.getAge();
+    }
+
+    public void setAge(int age) {
+        super.setAge(age);
+    }
+
+    public long getId() {
+        return super.getId();
+    }
+
+    public void setId(long id) {
+        super.setId(id);
+    }
+
+    @Override
+    public String toString() {
+        return "User{" +
+                "id=" + getId() +
+                ", name='" + getFullName() + '\'' +
+                ", email='" + getEmail() + '\'' +
+                ", age=" + getAge() +
+                ", role=" + role +
+                ", theme='" + theme + '\'' +
+                '}';
+    }
+}
+
+--------util---------
+---------AccessibilityUtil.java---------
+package iems.util;
+
+import javax.swing.*;
+import java.awt.*;
+import java.util.function.Consumer;
+
+public class AccessibilityUtil {
+    public static void scaleFonts(Component root, int percent) {
+        float scale = percent / 100f;
+        traverse(root, c -> {
+            Font f = c.getFont();
+            if (f != null)
+                c.setFont(f.deriveFont(Math.max(12f, f.getSize2D() * scale)));
+        });
+    }
+
+    private static void traverse(Component comp, Consumer<Component> fn) {
+        fn.accept(comp);
+        if (comp instanceof Container container) {
+            for (Component child : container.getComponents())
+                traverse(child, fn);
+        }
+    }
+
+    public static void mnemonic(AbstractButton b, char ch) {
+        b.setMnemonic(ch);
+    }
+
+    // Small helper for GridBag constraints reuse
+    public static GridBagConstraints baseGbc() {
+        GridBagConstraints g = new GridBagConstraints();
+        g.insets = new Insets(8, 8, 8, 8);
+        g.fill = GridBagConstraints.HORIZONTAL;
+        g.weightx = 1;
+        return g;
+    }
+
+    public static GridBagConstraints gbc(GridBagConstraints g, int x, int y) {
+        GridBagConstraints c = (GridBagConstraints) g.clone();
+        c.gridx = x;
+        c.gridy = y;
+        return c;
+    }
+}
+
+--------SecurityUtil.java--------
+package iems.util;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+
+public class SecurityUtil {
+    public static String hashPassword(String raw) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(raw.getBytes(StandardCharsets.UTF_8));
+
+            // Convert to hexadecimal (matching UserDAO)
+            return HexFormat.of().formatHex(hash);
+        } catch (Exception e) {
+            throw new RuntimeException("Error hashing password", e);
+        }
+    }
+
+    public static boolean verify(String raw, String hash) {
+        if (hash == null)
+            return false;
+        return hashPassword(raw).equals(hash);
+    }
+}
+
+--------SimpleDocListener.java---------
+package iems.util;
+
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+
+public interface SimpleDocListener extends DocumentListener {
+    void update(DocumentEvent e);
+
+    @Override
+    default void insertUpdate(DocumentEvent e) {
+        update(e);
+    }
+
+    @Override
+    default void removeUpdate(DocumentEvent e) {
+        update(e);
+    }
+
+    @Override
+    default void changedUpdate(DocumentEvent e) {
+        update(e);
+    }
+}
+
+---------ThemeManager.java---------
+package iems.util;
+
+import javax.swing.*;
+import java.awt.*;
+
+public class ThemeManager {
+    public static void apply(JFrame frame, String theme, boolean highContrast) {
+        Color bg = highContrast ? Color.BLACK : "dark".equals(theme) ? new Color(40, 40, 40) : Color.WHITE;
+        Color fg = highContrast ? Color.WHITE : "dark".equals(theme) ? Color.WHITE : Color.BLACK;
+
+        UIManager.put("Panel.background", bg);
+        UIManager.put("Panel.foreground", fg);
+        UIManager.put("Label.foreground", fg);
+        UIManager.put("Button.foreground", fg);
+        UIManager.put("TextField.background",
+                highContrast ? Color.DARK_GRAY : "dark".equals(theme) ? new Color(55, 55, 55) : Color.WHITE);
+        UIManager.put("TextField.foreground", fg);
+
+        SwingUtilities.updateComponentTreeUI(frame);
+        frame.repaint();
+    }
+}
+
+---------UIUtil.java---------
+package iems.util;
+
+import javax.swing.*;
+import java.awt.*;
+
+public class UIUtil {
+
+    public static void applySystemLookAndFeel() {
+        try {
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void setupButton(JButton button, Color bgColor) {
+        button.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        button.setForeground(Color.WHITE);
+        button.setBackground(bgColor);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+        button.setOpaque(true);
+        button.setContentAreaFilled(true);
+    }
+}
+
+--------apps---------
+package iems.apps;
+
+import iems.dao.Db;
+import iems.dao.MaterialDAO;
+import iems.dao.TutoringDAO;
+import iems.dao.UserDAO;
+import iems.model.Material;
+import iems.model.TutoringProgram;
+import iems.model.User;
+import iems.model.Role;
+import iems.ui.DashboardFrame;
+import iems.ui.LoginPanel;
+import iems.ui.RegisterPanel;
+import iems.util.SecurityUtil;
+
+import javax.swing.*;
+import java.awt.*;
+import java.sql.Statement;
+
+public class IEMSApp {
+
+    public static void main(String[] args) throws Exception {
+        // Set to cross-platform look and feel for consistent login UI
+        try {
+            UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // ✅ Connect to MySQL
+        Db.init(
+                "jdbc:mysql://localhost:3306/iems_db",
+                "root",
+                "dmsgreate08312001");
+
+        ensureSchema();
+        seedDemoData();
+
+        SwingUtilities.invokeLater(() -> {
+            JFrame loginFrame = new JFrame("Inclusive Education Management System (IEMS)");
+            loginFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+            loginFrame.setSize(500, 520);
+            loginFrame.setLocationRelativeTo(null);
+
+            // Create gradient background panel
+            JPanel mainPanel = new JPanel(new BorderLayout()) {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    super.paintComponent(g);
+                    Graphics2D g2 = (Graphics2D) g;
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                    GradientPaint gp = new GradientPaint(
+                            0, 0, new Color(58, 123, 213),
+                            0, getHeight(), new Color(0, 210, 255));
+                    g2.setPaint(gp);
+                    g2.fillRect(0, 0, getWidth(), getHeight());
+                }
+            };
+
+            LoginPanel login = new LoginPanel(
+                    user -> {
+                        // Switch to system L&F for dashboard
+                        try {
+                            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+                            SwingUtilities.updateComponentTreeUI(loginFrame);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                        loginFrame.dispose();
+                        new DashboardFrame(user).setVisible(true);
+                    },
+                    () -> {
+                        // Use loginFrame as the parent
+                        JDialog registerDialog = new JDialog(loginFrame, "Register", true);
+                        RegisterPanel reg = new RegisterPanel(u -> {
+                            registerDialog.dispose();
+                            JOptionPane.showMessageDialog(loginFrame,
+                                    "Account created. You can now log in.",
+                                    "Registration Successful",
+                                    JOptionPane.INFORMATION_MESSAGE);
+                        });
+                        registerDialog.setContentPane(reg);
+                        registerDialog.pack();
+                        registerDialog.setSize(550, 700); // Set explicit size
+                        registerDialog.setLocationRelativeTo(loginFrame);
+                        registerDialog.setResizable(true); // Allow resizing
+                        registerDialog.setVisible(true);
+                    });
+
+            mainPanel.add(login, BorderLayout.CENTER);
+            loginFrame.setContentPane(mainPanel);
+            loginFrame.setVisible(true);
+        });
+    }
+
+    public static JFrame createLoginFrame() {
+        JFrame frame = new JFrame("Inclusive Education Management System (IEMS)");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setSize(500, 520);
+        frame.setLocationRelativeTo(null);
+
+        // Create gradient background panel
+        JPanel mainPanel = new JPanel(new BorderLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                GradientPaint gp = new GradientPaint(
+                        0, 0, new Color(58, 123, 213),
+                        0, getHeight(), new Color(0, 210, 255));
+                g2.setPaint(gp);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+            }
+        };
+
+        LoginPanel login = new LoginPanel(
+                user -> {
+                    frame.dispose();
+                    new DashboardFrame(user).setVisible(true);
+                },
+                () -> {
+                    JDialog registerDialog = new JDialog(frame, "Register", true); // Changed parentFrame to frame
+                    RegisterPanel reg = new RegisterPanel(u -> {
+                        registerDialog.dispose();
+                        JOptionPane.showMessageDialog(frame,
+                                "Account created. You can now log in.",
+                                "Registration Successful",
+                                JOptionPane.INFORMATION_MESSAGE);
+                    });
+                    registerDialog.setContentPane(reg);
+                    registerDialog.pack();
+                    registerDialog.setSize(550, 700); // Explicitly set size
+                    registerDialog.setLocationRelativeTo(frame);
+                    registerDialog.setResizable(true); // Prevent resizing
+                    registerDialog.setVisible(true);
+                });
+
+        mainPanel.add(login, BorderLayout.CENTER);
+        frame.setContentPane(mainPanel);
+        return frame;
+    }
+
+    // ✅ MySQL schema creation
+    private static void ensureSchema() throws Exception {
+        try (Statement st = Db.get().createStatement()) {
+            st.executeUpdate("""
+                        CREATE TABLE IF NOT EXISTS users(
+                          id INT AUTO_INCREMENT PRIMARY KEY,
+                          full_name VARCHAR(100),
+                          email VARCHAR(100) UNIQUE,
+                          age INT,
+                          role VARCHAR(20),
+                          password_hash VARCHAR(255),
+                          high_contrast BOOLEAN,
+                          font_scale INT,
+                          theme VARCHAR(20),
+                          reset_token VARCHAR(255)
+                        )
+                    """);
+            st.executeUpdate("""
+                        CREATE TABLE IF NOT EXISTS materials(
+                          id INT AUTO_INCREMENT PRIMARY KEY,
+                          title VARCHAR(200),
+                          topic VARCHAR(100),
+                          level VARCHAR(50),
+                          format VARCHAR(50),
+                          url VARCHAR(255)
+                        )
+                    """);
+            st.executeUpdate("""
+                        CREATE TABLE IF NOT EXISTS tutoring_programs(
+                          id INT AUTO_INCREMENT PRIMARY KEY,
+                          subject VARCHAR(100),
+                          modality VARCHAR(50),
+                          schedule VARCHAR(100),
+                          seats INT
+                        )
+                    """);
+            st.executeUpdate("""
+                        CREATE TABLE IF NOT EXISTS tutoring_signups(
+                          id INT AUTO_INCREMENT PRIMARY KEY,
+                          program_id INT,
+                          user_id INT,
+                          status VARCHAR(50)
+                        )
+                    """);
+            st.executeUpdate("""
+                        CREATE TABLE IF NOT EXISTS support_requests(
+                          id INT AUTO_INCREMENT PRIMARY KEY,
+                          user_id INT,
+                          type VARCHAR(100),
+                          status VARCHAR(50),
+                          notes TEXT
+                        )
+                    """);
+        }
+    }
+
+    // ✅ Seed demo data
+    private static void seedDemoData() {
+        try {
+            MaterialDAO mdao = new MaterialDAO();
+            if (mdao.all().isEmpty()) {
+                Material m1 = new Material();
+                m1.setTitle("Basic Numeracy");
+                m1.setTopic("Math");
+                m1.setLevel("Elementary");
+                m1.setFormat("PDF");
+                m1.setUrlOrPath("path/to/numeracy.pdf");
+                mdao.create(m1);
+
+                Material m2 = new Material();
+                m2.setTitle("Reading Skills");
+                m2.setTopic("Reading");
+                m2.setLevel("Elementary");
+                m2.setFormat("Video");
+                m2.setUrlOrPath("https://example.com/read");
+                mdao.create(m2);
+
+                Material m3 = new Material();
+                m3.setTitle("Intro to Biology");
+                m3.setTopic("Science");
+                m3.setLevel("High");
+                m3.setFormat("Link");
+                m3.setUrlOrPath("https://example.com/bio");
+                mdao.create(m3);
+            }
+
+            TutoringDAO tdao = new TutoringDAO();
+            if (tdao.all().isEmpty()) {
+                TutoringProgram t1 = new TutoringProgram();
+                t1.setSubject("Math Fundamentals");
+                t1.setModality("Online");
+                t1.setSchedule("Sat 9:00–11:00");
+                t1.setSeatsAvailable(25);
+                tdao.create(t1);
+
+                TutoringProgram t2 = new TutoringProgram();
+                t2.setSubject("English Reading");
+                t2.setModality("In-person");
+                t2.setSchedule("Sun 13:00–15:00 @ Community Center");
+                t2.setSeatsAvailable(15);
+                tdao.create(t2);
+            }
+
+            UserDAO udao = new UserDAO();
+            if (udao.findByEmail("staff@iems.local").isEmpty()) {
+                User staff = new User();
+                staff.setFullName("IEMS Staff");
+                staff.setEmail("staff@iems.local");
+                staff.setAge(30);
+                staff.setRole(Role.STAFF);
+                staff.setPasswordHash(SecurityUtil.hashPassword("staff123"));
+                staff.setHighContrast(false);
+                staff.setPreferredFontScale(110);
+                staff.setTheme("light");
+                udao.create(staff);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+}
