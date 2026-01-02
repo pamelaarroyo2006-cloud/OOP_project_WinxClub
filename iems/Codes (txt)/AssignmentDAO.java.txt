@@ -1,0 +1,317 @@
+package iems.dao;
+
+import iems.model.Assignment;
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+
+public class AssignmentDAO {
+    private Connection connection;
+
+    public AssignmentDAO() throws SQLException {
+        this.connection = Db.get(); // Using your existing Db class
+    }
+
+    // Create a new assignment
+    public boolean create(Assignment assignment) throws SQLException {
+        String sql = "INSERT INTO assignments (title, description, teacher_id, due_date, subject, total_marks, created_at) "
+                +
+                "VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, assignment.getTitle());
+            ps.setString(2, assignment.getDescription());
+            ps.setLong(3, assignment.getTeacherId());
+            ps.setDate(4, Date.valueOf(assignment.getDueDate()));
+            ps.setString(5, assignment.getSubject());
+            ps.setInt(6, assignment.getTotalMarks());
+            ps.setTimestamp(7, Timestamp.valueOf(assignment.getCreatedAt()));
+
+            int affectedRows = ps.executeUpdate();
+
+            if (affectedRows > 0) {
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        assignment.setId(rs.getLong(1));
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    // Get all assignments for a teacher
+    public List<Assignment> getAssignmentsByTeacher(long teacherId) throws SQLException {
+        List<Assignment> assignments = new ArrayList<>();
+        String sql = "SELECT a.*, " +
+                "COUNT(DISTINCT s.id) as submissions_count " +
+                "FROM assignments a " +
+                "LEFT JOIN assignment_submissions s ON a.id = s.assignment_id " +
+                "WHERE a.teacher_id = ? " +
+                "GROUP BY a.id " +
+                "ORDER BY a.due_date";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                assignments.add(map(rs));
+            }
+        }
+        return assignments;
+    }
+
+    // Get upcoming assignments (due in the next 7 days)
+    public List<Assignment> getUpcomingAssignments(long teacherId) throws SQLException {
+        List<Assignment> assignments = new ArrayList<>();
+        String sql = "SELECT a.*, " +
+                "COUNT(DISTINCT s.id) as submissions_count " +
+                "FROM assignments a " +
+                "LEFT JOIN assignment_submissions s ON a.id = s.assignment_id " +
+                "WHERE a.teacher_id = ? AND a.due_date >= CURDATE() AND a.due_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY) "
+                +
+                "GROUP BY a.id " +
+                "ORDER BY a.due_date " +
+                "LIMIT 5";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                assignments.add(map(rs));
+            }
+        }
+        return assignments;
+    }
+
+    // Get assignment by ID
+    public Assignment findById(long id) throws SQLException {
+        String sql = "SELECT a.*, COUNT(DISTINCT s.id) as submissions_count " +
+                "FROM assignments a " +
+                "LEFT JOIN assignment_submissions s ON a.id = s.assignment_id " +
+                "WHERE a.id = ? " +
+                "GROUP BY a.id";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                return map(rs);
+            }
+            return null;
+        }
+    }
+
+    // Update an assignment
+    public boolean update(Assignment assignment) throws SQLException {
+        String sql = "UPDATE assignments SET title = ?, description = ?, due_date = ?, " +
+                "subject = ?, total_marks = ? WHERE id = ? AND teacher_id = ?";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setString(1, assignment.getTitle());
+            ps.setString(2, assignment.getDescription());
+            ps.setDate(3, Date.valueOf(assignment.getDueDate()));
+            ps.setString(4, assignment.getSubject());
+            ps.setInt(5, assignment.getTotalMarks());
+            ps.setLong(6, assignment.getId());
+            ps.setLong(7, assignment.getTeacherId());
+
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    // Delete an assignment
+    public boolean delete(long assignmentId, long teacherId) throws SQLException {
+        String sql = "DELETE FROM assignments WHERE id = ? AND teacher_id = ?";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, assignmentId);
+            ps.setLong(2, teacherId);
+
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    // Get assignments due today
+    public List<Assignment> getAssignmentsDueToday(long teacherId) throws SQLException {
+        List<Assignment> assignments = new ArrayList<>();
+        String sql = "SELECT a.*, COUNT(DISTINCT s.id) as submissions_count " +
+                "FROM assignments a " +
+                "LEFT JOIN assignment_submissions s ON a.id = s.assignment_id " +
+                "WHERE a.teacher_id = ? AND a.due_date = CURDATE() " +
+                "GROUP BY a.id " +
+                "ORDER BY a.created_at";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                assignments.add(map(rs));
+            }
+        }
+        return assignments;
+    }
+
+    // Get overdue assignments
+    public List<Assignment> getOverdueAssignments(long teacherId) throws SQLException {
+        List<Assignment> assignments = new ArrayList<>();
+        String sql = "SELECT a.*, COUNT(DISTINCT s.id) as submissions_count " +
+                "FROM assignments a " +
+                "LEFT JOIN assignment_submissions s ON a.id = s.assignment_id " +
+                "WHERE a.teacher_id = ? AND a.due_date < CURDATE() " +
+                "GROUP BY a.id " +
+                "ORDER BY a.due_date";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                assignments.add(map(rs));
+            }
+        }
+        return assignments;
+    }
+
+    // Count total assignments for a teacher
+    public int countByTeacher(long teacherId) throws SQLException {
+        String sql = "SELECT COUNT(*) as count FROM assignments WHERE teacher_id = ?";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                return rs.getInt("count");
+            }
+            return 0;
+        }
+    }
+
+    // Helper method to map ResultSet to Assignment object
+    private Assignment map(ResultSet rs) throws SQLException {
+        Assignment assignment = new Assignment();
+        assignment.setId(rs.getLong("id"));
+        assignment.setTitle(rs.getString("title"));
+        assignment.setDescription(rs.getString("description"));
+        assignment.setTeacherId(rs.getLong("teacher_id"));
+
+        Date dueDate = rs.getDate("due_date");
+        if (dueDate != null) {
+            assignment.setDueDate(dueDate.toLocalDate());
+        }
+
+        assignment.setSubject(rs.getString("subject"));
+        assignment.setTotalMarks(rs.getInt("total_marks"));
+
+        Timestamp createdAt = rs.getTimestamp("created_at");
+        if (createdAt != null) {
+            assignment.setCreatedAt(createdAt.toLocalDateTime());
+        }
+
+        // Get submissions count if column exists
+        try {
+            assignment.setSubmissionsCount(rs.getInt("submissions_count"));
+        } catch (SQLException e) {
+            assignment.setSubmissionsCount(0);
+        }
+
+        return assignment;
+    }
+
+    // Get all assignments (for admin purposes)
+    public List<Assignment> getAll() throws SQLException {
+        List<Assignment> assignments = new ArrayList<>();
+        String sql = "SELECT a.*, COUNT(DISTINCT s.id) as submissions_count " +
+                "FROM assignments a " +
+                "LEFT JOIN assignment_submissions s ON a.id = s.assignment_id " +
+                "GROUP BY a.id " +
+                "ORDER BY a.created_at DESC";
+
+        try (Statement stmt = connection.createStatement()) {
+            ResultSet rs = stmt.executeQuery(sql);
+
+            while (rs.next()) {
+                assignments.add(map(rs));
+            }
+        }
+        return assignments;
+    }
+
+    // Get assignments with filters (search)
+    public List<Assignment> search(String keyword, long teacherId) throws SQLException {
+        List<Assignment> assignments = new ArrayList<>();
+        String sql = "SELECT a.*, COUNT(DISTINCT s.id) as submissions_count " +
+                "FROM assignments a " +
+                "LEFT JOIN assignment_submissions s ON a.id = s.assignment_id " +
+                "WHERE a.teacher_id = ? AND (a.title LIKE ? OR a.description LIKE ? OR a.subject LIKE ?) " +
+                "GROUP BY a.id " +
+                "ORDER BY a.due_date";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            String searchPattern = "%" + keyword + "%";
+            ps.setString(2, searchPattern);
+            ps.setString(3, searchPattern);
+            ps.setString(4, searchPattern);
+
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                assignments.add(map(rs));
+            }
+        }
+        return assignments;
+    }
+
+    // Get assignments by subject
+    public List<Assignment> getBySubject(String subject, long teacherId) throws SQLException {
+        List<Assignment> assignments = new ArrayList<>();
+        String sql = "SELECT a.*, COUNT(DISTINCT s.id) as submissions_count " +
+                "FROM assignments a " +
+                "LEFT JOIN assignment_submissions s ON a.id = s.assignment_id " +
+                "WHERE a.teacher_id = ? AND a.subject = ? " +
+                "GROUP BY a.id " +
+                "ORDER BY a.due_date";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ps.setString(2, subject);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                assignments.add(map(rs));
+            }
+        }
+        return assignments;
+    }
+
+    // Get assignments with pagination
+    public List<Assignment> getAssignmentsPage(long teacherId, int limit, int offset) throws SQLException {
+        List<Assignment> assignments = new ArrayList<>();
+        String sql = "SELECT a.*, COUNT(DISTINCT s.id) as submissions_count " +
+                "FROM assignments a " +
+                "LEFT JOIN assignment_submissions s ON a.id = s.assignment_id " +
+                "WHERE a.teacher_id = ? " +
+                "GROUP BY a.id " +
+                "ORDER BY a.due_date " +
+                "LIMIT ? OFFSET ?";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ps.setInt(2, limit);
+            ps.setInt(3, offset);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                assignments.add(map(rs));
+            }
+        }
+        return assignments;
+    }
+}

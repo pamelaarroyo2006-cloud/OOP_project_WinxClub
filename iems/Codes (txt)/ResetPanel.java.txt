@@ -1,0 +1,84 @@
+package iems.ui;
+
+import iems.dao.UserDAO;
+import iems.model.User;
+import iems.util.AccessibilityUtil;
+import iems.util.SecurityUtil;
+
+import javax.swing.*;
+import java.awt.*;
+import java.util.Optional;
+
+public class ResetPanel extends JPanel {
+    public ResetPanel() {
+        setLayout(new BorderLayout());
+
+        // Header
+        JLabel title = new JLabel("Reset Your Password");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        title.setHorizontalAlignment(SwingConstants.CENTER);
+        title.setBorder(BorderFactory.createEmptyBorder(20, 0, 20, 0));
+        add(title, BorderLayout.NORTH);
+
+        // Form
+        JPanel form = new JPanel(new GridBagLayout());
+        GridBagConstraints g = AccessibilityUtil.baseGbc();
+        g.insets = new Insets(10, 10, 10, 10);
+
+        JTextField tokenField = new JTextField(20);
+        JPasswordField newPass = new JPasswordField(20);
+
+        JButton resetBtn = styledButton("Reset Password", new Color(70, 130, 180));
+
+        form.add(new JLabel("Reset token"), AccessibilityUtil.gbc(g, 0, 0));
+        form.add(tokenField, AccessibilityUtil.gbc(g, 1, 0));
+        form.add(new JLabel("New password"), AccessibilityUtil.gbc(g, 0, 1));
+        form.add(newPass, AccessibilityUtil.gbc(g, 1, 1));
+        form.add(resetBtn, AccessibilityUtil.gbc(g, 1, 2));
+
+        add(form, BorderLayout.CENTER);
+
+        // Logic
+        resetBtn.addActionListener(e -> {
+            String token = tokenField.getText().trim();
+            String pw = new String(newPass.getPassword());
+
+            if (token.isEmpty() || pw.isEmpty()) {
+                JOptionPane.showMessageDialog(this,
+                        "Token and new password are required.",
+                        "Validation Error", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            try {
+                Optional<User> u = new UserDAO().findByResetToken(token);
+                if (u.isPresent()) {
+                    new UserDAO().updatePassword(
+                            u.get().getId(),
+                            SecurityUtil.hashPassword(pw));
+                    JOptionPane.showMessageDialog(this,
+                            "Password updated successfully!",
+                            "Success", JOptionPane.INFORMATION_MESSAGE);
+                } else {
+                    JOptionPane.showMessageDialog(this,
+                            "Invalid token.",
+                            "Reset Failed", JOptionPane.ERROR_MESSAGE);
+                }
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this,
+                        "Error: " + ex.getMessage(),
+                        "Database Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+    }
+
+    private static JButton styledButton(String text, Color bg) {
+        JButton btn = new JButton(text);
+        btn.setBackground(bg);
+        btn.setForeground(Color.WHITE);
+        btn.setFocusPainted(false);
+        btn.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        btn.setBorder(BorderFactory.createEmptyBorder(8, 16, 8, 16));
+        return btn;
+    }
+}

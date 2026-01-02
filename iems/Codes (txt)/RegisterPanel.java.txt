@@ -1,0 +1,479 @@
+package iems.ui;
+
+import iems.dao.UserDAO;
+import iems.model.Role;
+import iems.model.User;
+import iems.util.SecurityUtil;
+
+import javax.swing.*;
+import java.awt.*;
+import java.sql.SQLException;
+import java.util.Optional;
+
+public class RegisterPanel extends JPanel {
+    private final java.util.function.Consumer<User> onRegistered;
+    private JTextField nameField;
+    private JTextField emailField;
+    private JSpinner ageSpinner;
+    private JComboBox<Role> roleCombo;
+    private JPasswordField passwordField;
+    private JCheckBox highContrastCheck;
+    private JSlider fontScaleSlider;
+    private JComboBox<String> themeCombo;
+
+    public RegisterPanel(java.util.function.Consumer<User> onRegistered) {
+        this.onRegistered = onRegistered;
+        initializeUI();
+    }
+
+    private void initializeUI() {
+        setLayout(new BorderLayout());
+        setOpaque(false);
+
+        // ===== Main container with padding =====
+        JPanel mainContainer = new JPanel(new BorderLayout());
+        mainContainer.setOpaque(false);
+        mainContainer.setBorder(BorderFactory.createEmptyBorder(40, 40, 40, 40));
+        add(mainContainer, BorderLayout.CENTER);
+
+        // ===== Card panel =====
+        JPanel cardPanel = new JPanel();
+        cardPanel.setLayout(new BoxLayout(cardPanel, BoxLayout.Y_AXIS));
+        cardPanel.setBackground(Color.WHITE);
+        cardPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(220, 220, 220), 1),
+                BorderFactory.createEmptyBorder(30, 30, 30, 30)));
+        cardPanel.setMaximumSize(new Dimension(550, 700));
+        cardPanel.setPreferredSize(new Dimension(550, 700));
+
+        // ===== Header =====
+        JPanel headerPanel = new JPanel();
+        headerPanel.setLayout(new BoxLayout(headerPanel, BoxLayout.Y_AXIS));
+        headerPanel.setOpaque(false);
+        headerPanel.setMaximumSize(new Dimension(500, 100));
+        headerPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel title = new JLabel("Create Your Account");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 28));
+        title.setForeground(new Color(44, 62, 80));
+        title.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel subtitle = new JLabel("Join our inclusive education community");
+        subtitle.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        subtitle.setForeground(new Color(127, 140, 141));
+        subtitle.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        headerPanel.add(title);
+        headerPanel.add(Box.createVerticalStrut(8));
+        headerPanel.add(subtitle);
+        headerPanel.add(Box.createVerticalStrut(30));
+
+        cardPanel.add(headerPanel);
+
+        // ===== Form Panel =====
+        JPanel formPanel = new JPanel();
+        formPanel.setLayout(new GridBagLayout());
+        formPanel.setOpaque(false);
+        formPanel.setMaximumSize(new Dimension(500, 500));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(8, 8, 8, 8);
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+
+        // Create form components
+        nameField = createTextField();
+        emailField = createTextField();
+        ageSpinner = createSpinner();
+        roleCombo = createComboBox(Role.values());
+        passwordField = createPasswordField();
+
+        // Row 1: Full Name
+        gbc.gridy = 0;
+        gbc.gridx = 0;
+        formPanel.add(createFormLabel("Full Name:"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        formPanel.add(nameField, gbc);
+
+        // Row 2: Email
+        gbc.gridy = 1;
+        gbc.gridx = 0;
+        gbc.weightx = 0;
+        formPanel.add(createFormLabel("Email Address:"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        formPanel.add(emailField, gbc);
+
+        // Row 3: Age
+        gbc.gridy = 2;
+        gbc.gridx = 0;
+        gbc.weightx = 0;
+        formPanel.add(createFormLabel("Age:"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        formPanel.add(ageSpinner, gbc);
+
+        // Row 4: Role
+        gbc.gridy = 3;
+        gbc.gridx = 0;
+        gbc.weightx = 0;
+        formPanel.add(createFormLabel("Role:"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        formPanel.add(roleCombo, gbc);
+
+        // Row 5: Password
+        gbc.gridy = 4;
+        gbc.gridx = 0;
+        gbc.weightx = 0;
+        formPanel.add(createFormLabel("Password:"), gbc);
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        formPanel.add(passwordField, gbc);
+
+        cardPanel.add(formPanel);
+        cardPanel.add(Box.createVerticalStrut(20));
+
+        // ===== Accessibility Panel =====
+        JPanel accessibilityPanel = createAccessibilityPanel();
+        accessibilityPanel.setMaximumSize(new Dimension(500, 150));
+        cardPanel.add(accessibilityPanel);
+        cardPanel.add(Box.createVerticalStrut(30));
+
+        // ===== Button Panel =====
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 20, 0));
+        buttonPanel.setOpaque(false);
+        buttonPanel.setMaximumSize(new Dimension(500, 60));
+
+        JButton createBtn = createPrimaryButton("Create Account");
+        JButton cancelBtn = createSecondaryButton("Cancel");
+
+        buttonPanel.add(createBtn);
+        buttonPanel.add(cancelBtn);
+
+        cardPanel.add(buttonPanel);
+
+        // ===== Sign In Link =====
+        JPanel footerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        footerPanel.setOpaque(false);
+        footerPanel.setMaximumSize(new Dimension(500, 40));
+
+        JLabel haveAccount = new JLabel("Already have an account? ");
+        haveAccount.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        haveAccount.setForeground(new Color(127, 140, 141));
+
+        JLabel signInLink = new JLabel("Sign In");
+        signInLink.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        signInLink.setForeground(new Color(41, 128, 185));
+        signInLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        footerPanel.add(haveAccount);
+        footerPanel.add(signInLink);
+
+        cardPanel.add(Box.createVerticalStrut(10));
+        cardPanel.add(footerPanel);
+
+        // Add card to center with padding
+        JPanel centerWrapper = new JPanel(new GridBagLayout());
+        centerWrapper.setOpaque(false);
+        centerWrapper.add(cardPanel);
+        mainContainer.add(centerWrapper, BorderLayout.CENTER);
+
+        // ===== Event Handlers =====
+        createBtn.addActionListener(e -> registerUser());
+        cancelBtn.addActionListener(e -> closeDialog());
+        signInLink.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                closeDialog();
+            }
+        });
+    }
+
+    private JPanel createAccessibilityPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBackground(Color.WHITE);
+        panel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+                "Accessibility Preferences",
+                javax.swing.border.TitledBorder.LEFT,
+                javax.swing.border.TitledBorder.TOP,
+                new Font("Segoe UI", Font.BOLD, 14),
+                new Color(44, 62, 80)));
+
+        // High contrast checkbox
+        highContrastCheck = new JCheckBox("Enable high contrast mode");
+        styleCheckBox(highContrastCheck);
+        highContrastCheck.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.add(highContrastCheck);
+        panel.add(Box.createVerticalStrut(15));
+
+        // Font scale
+        JPanel fontPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        fontPanel.setOpaque(false);
+        fontPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel fontLabel = new JLabel("Font Size:");
+        fontLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        fontLabel.setForeground(new Color(70, 80, 90));
+        fontPanel.add(fontLabel);
+        fontPanel.add(Box.createHorizontalStrut(15));
+
+        fontScaleSlider = new JSlider(100, 160, 120);
+        fontScaleSlider.setMajorTickSpacing(20);
+        fontScaleSlider.setMinorTickSpacing(5);
+        fontScaleSlider.setPaintTicks(true);
+        fontScaleSlider.setPaintLabels(true);
+        fontScaleSlider.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        fontScaleSlider.setPreferredSize(new Dimension(200, 50));
+        fontPanel.add(fontScaleSlider);
+
+        panel.add(fontPanel);
+        panel.add(Box.createVerticalStrut(15));
+
+        // Theme selection
+        JPanel themePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        themePanel.setOpaque(false);
+        themePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel themeLabel = new JLabel("Theme:");
+        themeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        themeLabel.setForeground(new Color(70, 80, 90));
+        themePanel.add(themeLabel);
+        themePanel.add(Box.createHorizontalStrut(15));
+
+        themeCombo = new JComboBox<>(new String[] { "Light Theme", "Dark Theme" });
+        themeCombo.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        themeCombo.setBackground(Color.WHITE);
+        themeCombo.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+                BorderFactory.createEmptyBorder(6, 10, 6, 10)));
+        themeCombo.setPreferredSize(new Dimension(150, 35));
+        themePanel.add(themeCombo);
+
+        panel.add(themePanel);
+
+        return panel;
+    }
+
+    private JLabel createFormLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        label.setForeground(new Color(70, 80, 90));
+        label.setHorizontalAlignment(SwingConstants.RIGHT);
+        label.setPreferredSize(new Dimension(120, 30));
+        return label;
+    }
+
+    private JTextField createTextField() {
+        JTextField field = new JTextField();
+        field.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+                BorderFactory.createEmptyBorder(10, 12, 10, 12)));
+        field.setBackground(Color.WHITE);
+        field.setPreferredSize(new Dimension(300, 40));
+        field.setMaximumSize(new Dimension(300, 40));
+        return field;
+    }
+
+    private JPasswordField createPasswordField() {
+        JPasswordField field = new JPasswordField();
+        field.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+                BorderFactory.createEmptyBorder(10, 12, 10, 12)));
+        field.setBackground(Color.WHITE);
+        field.setPreferredSize(new Dimension(300, 40));
+        field.setMaximumSize(new Dimension(300, 40));
+        return field;
+    }
+
+    private JSpinner createSpinner() {
+        JSpinner spinner = new JSpinner(new SpinnerNumberModel(18, 5, 120, 1));
+        JTextField editor = ((JSpinner.DefaultEditor) spinner.getEditor()).getTextField();
+        editor.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        editor.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+                BorderFactory.createEmptyBorder(10, 12, 10, 12)));
+        editor.setBackground(Color.WHITE);
+        editor.setPreferredSize(new Dimension(300, 40));
+        editor.setMaximumSize(new Dimension(300, 40));
+        return spinner;
+    }
+
+    private <T> JComboBox<T> createComboBox(T[] items) {
+        JComboBox<T> combo = new JComboBox<>(items);
+        combo.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        combo.setBackground(Color.WHITE);
+        combo.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+                BorderFactory.createEmptyBorder(10, 12, 10, 12)));
+        combo.setPreferredSize(new Dimension(300, 40));
+        combo.setMaximumSize(new Dimension(300, 40));
+        combo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value,
+                    int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                setFont(new Font("Segoe UI", Font.PLAIN, 14));
+                return this;
+            }
+        });
+        return combo;
+    }
+
+    private void styleCheckBox(JCheckBox checkBox) {
+        checkBox.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        checkBox.setForeground(new Color(70, 80, 90));
+        checkBox.setBackground(Color.WHITE);
+        checkBox.setFocusPainted(false);
+    }
+
+    private JButton createPrimaryButton(String text) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        button.setForeground(Color.WHITE);
+        button.setBackground(new Color(41, 128, 185));
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(31, 118, 175), 1),
+                BorderFactory.createEmptyBorder(12, 30, 12, 30)));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                button.setBackground(new Color(31, 118, 175));
+            }
+
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                button.setBackground(new Color(41, 128, 185));
+            }
+        });
+
+        return button;
+    }
+
+    private JButton createSecondaryButton(String text) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        button.setForeground(new Color(127, 140, 141));
+        button.setBackground(Color.WHITE);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+                BorderFactory.createEmptyBorder(10, 25, 10, 25)));
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                button.setForeground(new Color(41, 128, 185));
+                button.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(new Color(41, 128, 185), 1),
+                        BorderFactory.createEmptyBorder(10, 25, 10, 25)));
+            }
+
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                button.setForeground(new Color(127, 140, 141));
+                button.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+                        BorderFactory.createEmptyBorder(10, 25, 10, 25)));
+            }
+        });
+
+        return button;
+    }
+
+    private void registerUser() {
+        String name = nameField.getText().trim();
+        String email = emailField.getText().trim();
+        String password = new String(passwordField.getPassword());
+        Role selectedRole = (Role) roleCombo.getSelectedItem();
+
+        System.out.println("=== DEBUG REGISTRATION ===");
+        System.out.println("Full Name: " + name);
+        System.out.println("Email: " + email);
+        System.out.println("Role: " + selectedRole);
+
+        // Validation...
+
+        // Create user object
+        User user = new User();
+        user.setFullName(name); // This will split into first/last names
+        user.setEmail(email);
+        user.setAge((int) ageSpinner.getValue());
+        user.setRole(selectedRole);
+
+        // Hash the password
+        String hashedPassword = SecurityUtil.hashPassword(password);
+        System.out.println("Password hash: " + hashedPassword);
+        user.setPasswordHash(hashedPassword);
+
+        user.setHighContrast(highContrastCheck.isSelected());
+        user.setPreferredFontScale(fontScaleSlider.getValue());
+        user.setTheme(themeCombo.getSelectedItem().toString().toLowerCase().replace(" theme", ""));
+
+        System.out.println("User created: " + user.getFullName());
+        System.out.println("First name: " + user.getFirstName());
+        System.out.println("Last name: " + user.getLastName());
+        System.out.println("Role: " + user.getRole());
+        System.out.println("===========================");
+
+        try {
+            UserDAO userDAO = new UserDAO();
+            userDAO.create(user);
+
+            // Verify creation
+            Optional<User> savedUser = userDAO.findByEmail(email);
+            if (savedUser.isPresent()) {
+                System.out.println("SUCCESS: User saved to database!");
+                System.out.println("Database ID: " + savedUser.get().getId());
+                System.out.println("Database Role: " + savedUser.get().getRole());
+            }
+
+            JOptionPane.showMessageDialog(this,
+                    "Account created successfully!\nYou can now log in.",
+                    "Registration Complete",
+                    JOptionPane.INFORMATION_MESSAGE);
+            onRegistered.accept(user);
+            closeDialog();
+        } catch (SQLException ex) {
+            System.out.println("ERROR during registration: " + ex.getMessage());
+            ex.printStackTrace();
+            // ... error handling
+        }
+    }
+
+    private void closeDialog() {
+        Window window = SwingUtilities.getWindowAncestor(this);
+        if (window != null) {
+            window.dispose();
+        }
+    }
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        Graphics2D g2d = (Graphics2D) g;
+        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        // Gradient background
+        GradientPaint gradient = new GradientPaint(
+                0, 0, new Color(58, 123, 213),
+                0, getHeight(), new Color(0, 210, 255));
+        g2d.setPaint(gradient);
+        g2d.fillRect(0, 0, getWidth(), getHeight());
+    }
+
+    @Override
+    public Dimension getPreferredSize() {
+        return new Dimension(600, 750);
+    }
+}

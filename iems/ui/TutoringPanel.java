@@ -1,0 +1,210 @@
+package iems.ui;
+
+import iems.dao.TutoringDAO;
+import iems.dao.TutoringSignupDAO;
+import iems.model.Role;
+import iems.model.TutoringProgram;
+import iems.model.TutoringSignup;
+import iems.model.User;
+import iems.util.SimpleDocListener;
+
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.Optional;
+
+public class TutoringPanel extends JPanel {
+    private final JTable programTable;
+    private final DefaultTableModel programModel;
+    private final JTable signupTable;
+    private final DefaultTableModel signupModel;
+    private final JComboBox<String> modalityFilter = UIStyle
+            .styledComboBox(new String[] { "All", "Online", "In-person" });
+    private final JTextField subjectSearch = UIStyle.styledTextField(16);
+    private final JButton signupBtn = UIStyle.success("Sign up");
+    private final JButton addProgramBtn = UIStyle.primary("Add Program");
+    private final JButton exportCsv = UIStyle.warning("Export Signups");
+
+    private final User user;
+
+    public TutoringPanel(User user) {
+        this.user = user;
+        setLayout(new BorderLayout());
+        setBackground(UIStyle.LIGHT_BG);
+
+        // Header
+        JPanel header = UIStyle.card();
+        header.add(UIStyle.title("Tutoring Programs & Signups"), BorderLayout.WEST);
+        add(header, BorderLayout.NORTH);
+
+        // Filter bar
+        JPanel actions = UIStyle.card();
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+        bar.setOpaque(false);
+        bar.add(new JLabel("Subject search"));
+        bar.add(subjectSearch);
+        bar.add(new JLabel("Modality"));
+        bar.add(modalityFilter);
+        bar.add(signupBtn);
+        if (user.getRole() == Role.TEACHER || user.getRole() == Role.STAFF) {
+            bar.add(addProgramBtn);
+        }
+        bar.add(exportCsv);
+        actions.add(bar, BorderLayout.CENTER);
+        add(actions, BorderLayout.SOUTH);
+
+        // Program table
+        programModel = new DefaultTableModel(new String[] { "ID", "Subject", "Modality", "Schedule", "Seats" }, 0) {
+            public boolean isCellEditable(int r, int c) {
+                return false;
+            }
+        };
+        programTable = new JTable(programModel);
+        UIStyle.styleTable(programTable);
+
+        // Signup table
+        signupModel = new DefaultTableModel(new String[] { "SignupID", "ProgramID", "Subject", "Status" }, 0) {
+            public boolean isCellEditable(int r, int c) {
+                return false;
+            }
+        };
+        signupTable = new JTable(signupModel);
+        UIStyle.styleTable(signupTable);
+
+        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
+                new JScrollPane(programTable), new JScrollPane(signupTable));
+        split.setDividerLocation(300);
+        add(split, BorderLayout.CENTER);
+
+        reloadPrograms();
+        reloadSignups();
+
+        subjectSearch.getDocument().addDocumentListener((SimpleDocListener) e -> applyFilter());
+        modalityFilter.addActionListener(e -> applyFilter());
+
+        signupBtn.addActionListener(e -> signUpToSelected());
+        addProgramBtn.addActionListener(e -> addProgramDialog());
+        exportCsv.addActionListener(e -> exportSignupsCsv());
+    }
+
+    private void reloadPrograms() {
+        try {
+            programModel.setRowCount(0);
+            for (TutoringProgram t : new TutoringDAO().all()) {
+                programModel.addRow(new Object[] {
+                        t.getId(), t.getSubject(), t.getModality(), t.getSchedule(), t.getSeatsAvailable()
+                });
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                    "Database Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void reloadSignups() {
+        try {
+            signupModel.setRowCount(0);
+            TutoringDAO tdao = new TutoringDAO();
+            for (TutoringSignup s : new TutoringSignupDAO().forUser(user.getId())) {
+                Optional<TutoringProgram> prog = tdao.findById(s.getProgramId());
+                String subject = prog.map(TutoringProgram::getSubject).orElse("N/A");
+                signupModel.addRow(new Object[] { s.getId(), s.getProgramId(), subject, s.getStatus() });
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                    "Database Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void applyFilter() {
+        String query = subjectSearch.getText().toLowerCase();
+        String modality = (String) modalityFilter.getSelectedItem();
+        for (int i = 0; i < programModel.getRowCount(); i++) {
+            String subj = programModel.getValueAt(i, 1).toString().toLowerCase();
+            String mod = programModel.getValueAt(i, 2).toString();
+            boolean show = (query.isEmpty() || subj.contains(query)) &&
+                    ("All".equals(modality) || modality.equals(mod));
+            programTable.setRowHeight(i, show ? 28 : 0);
+        }
+    }
+
+    private void signUpToSelected() {
+        int row = programTable.getSelectedRow();
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "Select a program to sign up.",
+                    "No Selection", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        long progId = Long.parseLong(programModel.getValueAt(row, 0).toString());
+        int seats = Integer.parseInt(programModel.getValueAt(row, 4).toString());
+        try {
+            TutoringDAO tdao = new TutoringDAO();
+            TutoringSignupDAO sdao = new TutoringSignupDAO();
+            String status;
+            if (seats > 0) {
+                tdao.updateSeats(progId, seats - 1);
+                status = "Registered";
+            } else {
+                status = "Waitlisted";
+            }
+            sdao.create(progId, user.getId(), status);
+            reloadPrograms();
+            reloadSignups();
+            JOptionPane.showMessageDialog(this, "Signup " + status + ".",
+                    "Success", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                    "Signup Failed", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void addProgramDialog() {
+        JTextField subj = UIStyle.styledTextField(20);
+        JComboBox<String> mod = UIStyle.styledComboBox(new String[] { "Online", "In-person" });
+        JTextField sched = UIStyle.styledTextField(20);
+        JSpinner seats = new JSpinner(new SpinnerNumberModel(20, 0, 500, 1));
+
+        int result = JOptionPane.showConfirmDialog(this,
+                new Object[] { "Subject", subj, "Modality", mod, "Schedule", sched, "Seats", seats },
+                "Add Tutoring Program", JOptionPane.OK_CANCEL_OPTION);
+
+        if (result == JOptionPane.OK_OPTION) {
+            try {
+                TutoringProgram t = new TutoringProgram();
+                t.setSubject(subj.getText().trim());
+                t.setModality((String) mod.getSelectedItem());
+                t.setSchedule(sched.getText().trim());
+                t.setSeatsAvailable((Integer) seats.getValue());
+                new TutoringDAO().create(t);
+                reloadPrograms();
+                JOptionPane.showMessageDialog(this, "Program added successfully!",
+                        "Success", JOptionPane.INFORMATION_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                        "Add Failed", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private void exportSignupsCsv() {
+        try (var w = new FileWriter("tutoring_signups.csv")) {
+            w.write("SignupID,ProgramID,Subject,Status\n");
+            for (int i = 0; i < signupModel.getRowCount(); i++) {
+                w.write(String.join(",",
+                        signupModel.getValueAt(i, 0).toString(),
+                        signupModel.getValueAt(i, 1).toString(),
+                        signupModel.getValueAt(i, 2).toString().replace(",", ";"),
+                        signupModel.getValueAt(i, 3).toString()) + "\n");
+            }
+            JOptionPane.showMessageDialog(this,
+                    "Exported tutoring_signups.csv",
+                    "Export Complete", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Error: " + ex.getMessage(),
+                    "Export Failed", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+}

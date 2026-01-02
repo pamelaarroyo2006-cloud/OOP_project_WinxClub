@@ -1,0 +1,1473 @@
+package iems.ui;
+
+import iems.dao.*;
+import iems.model.*;
+import javax.swing.*;
+import javax.swing.table.*;
+import java.awt.*;
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.io.File;
+
+public class TeacherDashboardPanel extends JPanel {
+    private final User teacher;
+    private DefaultTableModel studentsTableModel;
+    private DefaultTableModel materialsTableModel;
+    private DefaultTableModel assignmentsTableModel;
+    private JTable studentsTable;
+    private JTable materialsTable;
+    private JTable assignmentsTable;
+    private JTabbedPane mainTabbedPane;
+
+    // DAOs
+    private UserDAO userDAO;
+    private MaterialDAO materialDAO;
+    private AssignmentDAO assignmentDAO;
+    private GradeDAO gradeDAO;
+
+    public GradeDAO getGradeDAO() {
+        return gradeDAO;
+    }
+
+    public void setGradeDAO(GradeDAO gradeDAO) {
+        this.gradeDAO = gradeDAO;
+    }
+
+    // UI Components for stats
+    private JLabel totalStudentsLabel;
+    private JLabel activeCoursesLabel;
+    private JLabel assignmentsDueLabel;
+    private JLabel messagesLabel;
+
+    public JLabel getMessagesLabel() {
+        return messagesLabel;
+    }
+
+    public void setMessagesLabel(JLabel messagesLabel) {
+        this.messagesLabel = messagesLabel;
+    }
+
+    private JLabel avgProgressLabel;
+
+    // Color palette from UIStyle
+    private static final Color PRIMARY_COLOR = new Color(70, 130, 180); // Steel blue from UIStyle
+    private static final Color SECONDARY_COLOR = new Color(34, 139, 34); // Forest green from UIStyle
+    private static final Color BACKGROUND_COLOR = Color.WHITE;
+    private static final Color CARD_BG = Color.WHITE;
+    private static final Color TEXT_PRIMARY = new Color(33, 37, 41);
+    private static final Color TEXT_SECONDARY = new Color(108, 117, 125);
+    private static final Color BORDER_COLOR = new Color(222, 226, 230);
+
+    // Additional colors for variety
+    private static final Color ACCENT_COLOR = new Color(255, 183, 77); // Orange
+    private static final Color PURPLE_COLOR = new Color(139, 92, 246); // Purple
+    private static final Color GRAY_COLOR = new Color(107, 114, 128); // Neutral gray
+
+    // NEW: Colors for the top navbar tabs
+    private static final Color TAB_INACTIVE_BG = new Color(248, 250, 252);
+    private static final Color TAB_INACTIVE_TEXT = new Color(100, 116, 139);
+    private static final Color TAB_ACTIVE_BG = Color.WHITE;
+    private static final Color TAB_ACTIVE_TEXT = PRIMARY_COLOR;
+    private static final Color TAB_BORDER_COLOR = new Color(226, 232, 240);
+
+    // Fonts from UIStyle
+    private static final Font TITLE_FONT = UIStyle.TITLE;
+    private static final Font SECTION_FONT = UIStyle.SECTION;
+    private static final Font BODY_FONT = UIStyle.BODY;
+    private static final Font SMALL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
+    private static final Font BUTTON_FONT = new Font("Segoe UI", Font.BOLD, 13);
+    private static final Font TAB_FONT = new Font("Segoe UI", Font.BOLD, 14);
+
+    public TeacherDashboardPanel(User teacher) {
+        this.teacher = teacher;
+
+        try {
+            userDAO = new UserDAO();
+            materialDAO = new MaterialDAO();
+            assignmentDAO = new AssignmentDAO();
+            gradeDAO = new GradeDAO();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(null, "Database connection error: " + e.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+
+        initializeTableModels();
+        initializeUI();
+        loadDashboardData();
+    }
+
+    private void initializeTableModels() {
+        // Students table model
+        String[] studentColumns = { "ID", "Name", "Email", "Age", "Progress", "Grade", "Actions" };
+        studentsTableModel = new DefaultTableModel(studentColumns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return column == studentColumns.length - 1;
+            }
+        };
+        studentsTable = new JTable(studentsTableModel);
+
+        // Materials table model
+        String[] materialColumns = { "ID", "Title", "Topic", "Level", "Format", "Actions" };
+        materialsTableModel = new DefaultTableModel(materialColumns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return column == materialColumns.length - 1;
+            }
+        };
+        materialsTable = new JTable(materialsTableModel);
+
+        // Assignments table model
+        String[] assignmentColumns = { "ID", "Title", "Subject", "Due Date", "Status", "Actions" };
+        assignmentsTableModel = new DefaultTableModel(assignmentColumns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return column == assignmentColumns.length - 1;
+            }
+        };
+        assignmentsTable = new JTable(assignmentsTableModel);
+    }
+
+    private void initializeUI() {
+        setLayout(new BorderLayout());
+        setBackground(BACKGROUND_COLOR);
+
+        // Create main container
+        JPanel mainContainer = new JPanel(new BorderLayout());
+        mainContainer.setBackground(BACKGROUND_COLOR);
+
+        // Header with profile
+        mainContainer.add(createHeaderPanel(), BorderLayout.NORTH);
+
+        // Content area with tabs
+        mainTabbedPane = new JTabbedPane(JTabbedPane.TOP) {
+            @Override
+            protected void paintBorder(Graphics g) {
+                // Remove default border and draw our own
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(TAB_BORDER_COLOR);
+                g2.drawLine(0, getHeight() - 1, getWidth(), getHeight() - 1);
+            }
+        };
+
+        // Customize the tabbed pane appearance
+        mainTabbedPane.setFont(TAB_FONT);
+        mainTabbedPane.setBackground(TAB_INACTIVE_BG);
+        mainTabbedPane.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+        mainTabbedPane.setTabLayoutPolicy(JTabbedPane.SCROLL_TAB_LAYOUT);
+
+        // Change UI manager defaults for tabs
+        UIManager.put("TabbedPane.selected", TAB_ACTIVE_BG);
+        UIManager.put("TabbedPane.background", TAB_INACTIVE_BG);
+        UIManager.put("TabbedPane.foreground", TAB_INACTIVE_TEXT);
+        UIManager.put("TabbedPane.selectedBackground", TAB_ACTIVE_BG);
+        UIManager.put("TabbedPane.selectedForeground", TAB_ACTIVE_TEXT);
+        UIManager.put("TabbedPane.borderHighlightColor", PRIMARY_COLOR);
+        UIManager.put("TabbedPane.contentBorderInsets", new Insets(0, 0, 0, 0));
+        UIManager.put("TabbedPane.tabAreaInsets", new Insets(0, 0, 0, 0));
+
+        SwingUtilities.updateComponentTreeUI(mainTabbedPane);
+
+        // Add tabs
+        mainTabbedPane.addTab("Overview", createOverviewPanel());
+        mainTabbedPane.addTab("Students", createStudentsPanel());
+        mainTabbedPane.addTab("Materials", createMaterialsPanel());
+        mainTabbedPane.addTab("Assignments", createAssignmentsPanel());
+
+        mainContainer.add(mainTabbedPane, BorderLayout.CENTER);
+        add(mainContainer, BorderLayout.CENTER);
+
+        // Custom tab renderer to change colors
+        mainTabbedPane.addChangeListener(e -> {
+            updateTabColors();
+        });
+
+        // Initial tab color update
+        updateTabColors();
+    }
+
+    private void updateTabColors() {
+        for (int i = 0; i < mainTabbedPane.getTabCount(); i++) {
+            Component tabComponent = mainTabbedPane.getTabComponentAt(i);
+            if (tabComponent == null) {
+                // Create custom tab component
+                JLabel label = new JLabel(mainTabbedPane.getTitleAt(i));
+                label.setFont(TAB_FONT);
+                label.setHorizontalAlignment(SwingConstants.CENTER);
+                label.setBorder(BorderFactory.createEmptyBorder(12, 20, 12, 20));
+
+                if (i == mainTabbedPane.getSelectedIndex()) {
+                    label.setForeground(TAB_ACTIVE_TEXT);
+                    label.setBackground(TAB_ACTIVE_BG);
+                    label.setOpaque(true);
+                    label.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createMatteBorder(1, 1, 0, 1, TAB_BORDER_COLOR),
+                            BorderFactory.createEmptyBorder(12, 20, 12, 20)));
+                } else {
+                    label.setForeground(TAB_INACTIVE_TEXT);
+                    label.setBackground(TAB_INACTIVE_BG);
+                    label.setOpaque(true);
+                    label.setBorder(BorderFactory.createEmptyBorder(12, 20, 12, 20));
+                }
+
+                mainTabbedPane.setTabComponentAt(i, label);
+            } else {
+                // Update existing component
+                if (tabComponent instanceof JLabel) {
+                    JLabel label = (JLabel) tabComponent;
+                    if (i == mainTabbedPane.getSelectedIndex()) {
+                        label.setForeground(TAB_ACTIVE_TEXT);
+                        label.setBackground(TAB_ACTIVE_BG);
+                        label.setOpaque(true);
+                        label.setBorder(BorderFactory.createCompoundBorder(
+                                BorderFactory.createMatteBorder(1, 1, 0, 1, TAB_BORDER_COLOR),
+                                BorderFactory.createEmptyBorder(12, 20, 12, 20)));
+                    } else {
+                        label.setForeground(TAB_INACTIVE_TEXT);
+                        label.setBackground(TAB_INACTIVE_BG);
+                        label.setOpaque(true);
+                        label.setBorder(BorderFactory.createEmptyBorder(12, 20, 12, 20));
+                    }
+                }
+            }
+        }
+    }
+
+    private JPanel createHeaderPanel() {
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(CARD_BG);
+        header.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER_COLOR),
+                BorderFactory.createEmptyBorder(15, 30, 15, 30)));
+
+        // Left side - Title and breadcrumb
+        JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        leftPanel.setBackground(CARD_BG);
+
+        JLabel title = new JLabel("Teacher Dashboard");
+        title.setFont(TITLE_FONT);
+        title.setForeground(TEXT_PRIMARY);
+
+        JLabel breadcrumb = new JLabel(" / " + teacher.getFullName());
+        breadcrumb.setFont(SMALL_FONT);
+        breadcrumb.setForeground(TEXT_SECONDARY);
+
+        leftPanel.add(title);
+        leftPanel.add(breadcrumb);
+
+        // Right side - Quick stats
+        JPanel statsPanel = createQuickStatsPanel();
+
+        header.add(leftPanel, BorderLayout.WEST);
+        header.add(statsPanel, BorderLayout.EAST);
+        return header;
+    }
+
+    private JPanel createQuickStatsPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 20, 0));
+        panel.setBackground(CARD_BG);
+
+        // Create stat cards
+        totalStudentsLabel = new JLabel("0");
+        activeCoursesLabel = new JLabel("0");
+        assignmentsDueLabel = new JLabel("0");
+        avgProgressLabel = new JLabel("0%");
+
+        panel.add(createStatCard("Total Students", totalStudentsLabel, PRIMARY_COLOR));
+        panel.add(createStatCard("Active Courses", activeCoursesLabel, SECONDARY_COLOR));
+        panel.add(createStatCard("Assignments Due", assignmentsDueLabel, ACCENT_COLOR));
+        panel.add(createStatCard("Avg. Progress", avgProgressLabel, GRAY_COLOR));
+
+        return panel;
+    }
+
+    private JPanel createStatCard(String title, JLabel valueLabel, Color color) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_COLOR),
+                BorderFactory.createEmptyBorder(15, 20, 15, 20)));
+        card.setPreferredSize(new Dimension(150, 80));
+
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        valueLabel.setForeground(color);
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(SMALL_FONT);
+        titleLabel.setForeground(TEXT_SECONDARY);
+
+        JPanel content = new JPanel(new BorderLayout(0, 5));
+        content.setBackground(CARD_BG);
+        content.add(valueLabel, BorderLayout.CENTER);
+        content.add(titleLabel, BorderLayout.SOUTH);
+
+        card.add(content, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel createOverviewPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BACKGROUND_COLOR);
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        // Welcome card
+        JPanel welcomeCard = createWelcomeCard();
+        panel.add(welcomeCard, BorderLayout.NORTH);
+
+        // Quick stats grid
+        JPanel statsGrid = new JPanel(new GridLayout(1, 3, 20, 20));
+        statsGrid.setBackground(BACKGROUND_COLOR);
+        statsGrid.setBorder(BorderFactory.createEmptyBorder(20, 0, 0, 0));
+
+        statsGrid.add(createQuickStatCard("Classes Today", "3", PRIMARY_COLOR));
+        statsGrid.add(createQuickStatCard("To Grade", "5", ACCENT_COLOR));
+
+        // Messages card
+        messagesLabel = new JLabel("2");
+        JPanel messagesCard = createQuickStatCard("Messages", "2", SECONDARY_COLOR);
+        // Update the messages label reference
+        Component[] comps = messagesCard.getComponents();
+        if (comps.length > 0 && comps[0] instanceof JPanel) {
+            Component[] innerComps = ((JPanel) comps[0]).getComponents();
+            if (innerComps.length > 0 && innerComps[0] instanceof JLabel) {
+                messagesLabel = (JLabel) innerComps[0];
+            }
+        }
+        statsGrid.add(messagesCard);
+
+        panel.add(statsGrid, BorderLayout.CENTER);
+
+        // Quick actions
+        JPanel quickActions = createQuickActionsPanel();
+        panel.add(quickActions, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    private JPanel createWelcomeCard() {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_COLOR),
+                BorderFactory.createEmptyBorder(20, 20, 20, 20)));
+
+        JLabel welcomeLabel = new JLabel("Welcome, " + teacher.getFullName() + "!");
+        welcomeLabel.setFont(SECTION_FONT);
+        welcomeLabel.setForeground(TEXT_PRIMARY);
+
+        JTextArea description = new JTextArea(
+                "You have access to all student management features.\n" +
+                        "Create assignments, upload materials, and track student progress.\n" +
+                        "Use the tabs below to navigate different sections.");
+        description.setFont(BODY_FONT);
+        description.setForeground(TEXT_SECONDARY);
+        description.setBackground(CARD_BG);
+        description.setEditable(false);
+        description.setLineWrap(true);
+        description.setWrapStyleWord(true);
+
+        // Use UIStyle.primary for "View Schedule" button
+        JButton viewScheduleBtn = UIStyle.primary("View Schedule");
+        viewScheduleBtn.addActionListener(e -> viewSchedule());
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        buttonPanel.setBackground(CARD_BG);
+        buttonPanel.add(viewScheduleBtn);
+
+        JPanel content = new JPanel(new BorderLayout(0, 15));
+        content.setBackground(CARD_BG);
+        content.add(welcomeLabel, BorderLayout.NORTH);
+        content.add(description, BorderLayout.CENTER);
+        content.add(buttonPanel, BorderLayout.SOUTH);
+
+        card.add(content, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel createQuickStatCard(String title, String value, Color color) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_COLOR),
+                BorderFactory.createEmptyBorder(15, 15, 15, 15)));
+
+        JPanel content = new JPanel(new BorderLayout(0, 10));
+        content.setBackground(CARD_BG);
+
+        JLabel valueLabel = new JLabel(value);
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        valueLabel.setForeground(color);
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(SMALL_FONT);
+        titleLabel.setForeground(TEXT_SECONDARY);
+
+        content.add(valueLabel, BorderLayout.NORTH);
+        content.add(titleLabel, BorderLayout.SOUTH);
+
+        card.add(content, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel createQuickActionsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BACKGROUND_COLOR);
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 0, 0, 0));
+
+        JLabel title = new JLabel("Quick Actions");
+        title.setFont(BODY_FONT);
+        title.setForeground(TEXT_PRIMARY);
+        title.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 0));
+
+        JPanel actionsGrid = new JPanel(new GridLayout(1, 4, 10, 10));
+        actionsGrid.setBackground(BACKGROUND_COLOR);
+
+        String[] actions = { "Create Assignment", "Add Student", "Upload Material", "View Reports" };
+        Color[] colors = { PRIMARY_COLOR, SECONDARY_COLOR, ACCENT_COLOR, PURPLE_COLOR };
+
+        for (int i = 0; i < actions.length; i++) {
+            JButton actionBtn = UIStyle.button(actions[i], colors[i]);
+            final String action = actions[i];
+            actionBtn.addActionListener(e -> handleQuickAction(action));
+            actionsGrid.add(actionBtn);
+        }
+
+        JPanel content = new JPanel(new BorderLayout(0, 10));
+        content.setBackground(BACKGROUND_COLOR);
+        content.add(title, BorderLayout.NORTH);
+        content.add(actionsGrid, BorderLayout.CENTER);
+
+        panel.add(content, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel createStudentsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BACKGROUND_COLOR);
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        // Header
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(BACKGROUND_COLOR);
+
+        JLabel title = new JLabel("Student Management");
+        title.setFont(SECTION_FONT);
+        title.setForeground(TEXT_PRIMARY);
+
+        // Search and buttons
+        JPanel controlPanel = new JPanel(new BorderLayout(10, 0));
+        controlPanel.setBackground(BACKGROUND_COLOR);
+
+        JTextField searchField = new JTextField(20);
+        searchField.setFont(BODY_FONT);
+        searchField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_COLOR),
+                BorderFactory.createEmptyBorder(10, 15, 10, 15)));
+        searchField.putClientProperty("JTextField.placeholderText", "Search students...");
+        searchField.addKeyListener(new java.awt.event.KeyAdapter() {
+            public void keyReleased(java.awt.event.KeyEvent evt) {
+                filterStudentsTable(searchField.getText());
+            }
+        });
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        buttonPanel.setBackground(BACKGROUND_COLOR);
+
+        // Use UIStyle.success for "Add Student" button
+        JButton addStudentBtn = UIStyle.success("Add Student");
+        addStudentBtn.addActionListener(e -> showAddStudentDialog());
+
+        // Use UIStyle.primary for "Refresh" button
+        JButton refreshBtn = UIStyle.primary("Refresh");
+        refreshBtn.addActionListener(e -> loadStudents());
+
+        buttonPanel.add(addStudentBtn);
+        buttonPanel.add(refreshBtn);
+
+        controlPanel.add(searchField, BorderLayout.CENTER);
+        controlPanel.add(buttonPanel, BorderLayout.EAST);
+
+        header.add(title, BorderLayout.WEST);
+        header.add(controlPanel, BorderLayout.CENTER);
+
+        panel.add(header, BorderLayout.NORTH);
+        panel.add(createStudentsTablePanel(), BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private JPanel createStudentsTablePanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(CARD_BG);
+        panel.setBorder(BorderFactory.createLineBorder(BORDER_COLOR));
+
+        styleTable(studentsTable);
+
+        // Add action column
+        TableColumnModel columnModel = studentsTable.getColumnModel();
+        columnModel.getColumn(6).setCellRenderer(new ButtonRenderer());
+        columnModel.getColumn(6).setCellEditor(new StudentButtonEditor(new JCheckBox()));
+
+        JScrollPane scrollPane = new JScrollPane(studentsTable);
+        scrollPane.setBorder(null);
+
+        panel.add(scrollPane, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel createMaterialsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BACKGROUND_COLOR);
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        // Header
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(BACKGROUND_COLOR);
+
+        JLabel title = new JLabel("Course Materials");
+        title.setFont(SECTION_FONT);
+        title.setForeground(TEXT_PRIMARY);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        buttonPanel.setBackground(BACKGROUND_COLOR);
+
+        // Use UIStyle.success for "Add Material" button
+        JButton addMaterialBtn = UIStyle.success("Add Material");
+        addMaterialBtn.addActionListener(e -> showAddMaterialDialog());
+
+        // Use UIStyle.primary for "Upload File" button
+        JButton uploadBtn = UIStyle.primary("Upload File");
+        uploadBtn.addActionListener(e -> uploadMaterialFile());
+
+        // Use UIStyle.primary for "Refresh" button
+        JButton refreshBtn = UIStyle.primary("Refresh");
+        refreshBtn.addActionListener(e -> loadMaterials());
+
+        buttonPanel.add(addMaterialBtn);
+        buttonPanel.add(uploadBtn);
+        buttonPanel.add(refreshBtn);
+
+        header.add(title, BorderLayout.WEST);
+        header.add(buttonPanel, BorderLayout.EAST);
+
+        panel.add(header, BorderLayout.NORTH);
+        panel.add(createMaterialsTablePanel(), BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private JPanel createMaterialsTablePanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(CARD_BG);
+        panel.setBorder(BorderFactory.createLineBorder(BORDER_COLOR));
+
+        styleTable(materialsTable);
+
+        // Add action column
+        TableColumnModel columnModel = materialsTable.getColumnModel();
+        columnModel.getColumn(5).setCellRenderer(new ButtonRenderer());
+        columnModel.getColumn(5).setCellEditor(new MaterialButtonEditor(new JCheckBox()));
+
+        JScrollPane scrollPane = new JScrollPane(materialsTable);
+        scrollPane.setBorder(null);
+
+        panel.add(scrollPane, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel createAssignmentsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(BACKGROUND_COLOR);
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        // Header
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(BACKGROUND_COLOR);
+
+        JLabel title = new JLabel("Assignments");
+        title.setFont(SECTION_FONT);
+        title.setForeground(TEXT_PRIMARY);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        buttonPanel.setBackground(BACKGROUND_COLOR);
+
+        // Use UIStyle.primary for "Create Assignment" button
+        JButton createBtn = UIStyle.primary("Create Assignment");
+        createBtn.addActionListener(e -> showCreateAssignmentDialog());
+
+        // Use UIStyle.primary for "Refresh" button
+        JButton refreshBtn = UIStyle.primary("Refresh");
+        refreshBtn.addActionListener(e -> loadAssignments());
+
+        buttonPanel.add(createBtn);
+        buttonPanel.add(refreshBtn);
+
+        header.add(title, BorderLayout.WEST);
+        header.add(buttonPanel, BorderLayout.EAST);
+
+        panel.add(header, BorderLayout.NORTH);
+        panel.add(createAssignmentsTablePanel(), BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private JPanel createAssignmentsTablePanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBackground(CARD_BG);
+        panel.setBorder(BorderFactory.createLineBorder(BORDER_COLOR));
+
+        styleTable(assignmentsTable);
+
+        // Add action column
+        TableColumnModel columnModel = assignmentsTable.getColumnModel();
+        columnModel.getColumn(5).setCellRenderer(new ButtonRenderer());
+        columnModel.getColumn(5).setCellEditor(new AssignmentButtonEditor(new JCheckBox()));
+
+        JScrollPane scrollPane = new JScrollPane(assignmentsTable);
+        scrollPane.setBorder(null);
+
+        panel.add(scrollPane, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private void styleTable(JTable table) {
+        // Use UIStyle to style the table
+        UIStyle.styleTable(table);
+        table.setRowHeight(40);
+        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 14));
+        table.getTableHeader().setBackground(new Color(248, 249, 250));
+        table.getTableHeader().setForeground(TEXT_PRIMARY);
+        table.getTableHeader().setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER_COLOR));
+        table.setShowGrid(false);
+        table.setIntercellSpacing(new Dimension(0, 0));
+        table.setSelectionBackground(new Color(70, 130, 180, 50)); // Primary color with transparency
+        table.setSelectionForeground(TEXT_PRIMARY);
+
+        // Alternate row colors
+        table.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(
+                        table, value, isSelected, hasFocus, row, column);
+
+                if (!isSelected) {
+                    c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(248, 249, 250));
+                }
+
+                setBorder(BorderFactory.createEmptyBorder(0, 15, 0, 15));
+                return c;
+            }
+        });
+    }
+
+    private void loadDashboardData() {
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                loadStudents();
+                loadMaterials();
+                loadAssignments();
+                updateStats();
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                } catch (Exception e) {
+                    showError("Error loading dashboard data: " + e.getMessage());
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void loadStudents() {
+        try {
+            List<User> allUsers = userDAO.getAllUsers();
+            studentsTableModel.setRowCount(0);
+
+            int studentCount = 0;
+            for (User user : allUsers) {
+                if (user.getRole() == Role.LEARNER) {
+                    studentCount++;
+                    studentsTableModel.addRow(new Object[] {
+                            user.getId(),
+                            user.getFullName(),
+                            user.getEmail(),
+                            user.getAge(),
+                            "85%", // Placeholder progress
+                            "B+", // Placeholder grade
+                            "View | Edit | Delete"
+                    });
+                }
+            }
+
+            // Update student count
+            totalStudentsLabel.setText(String.valueOf(studentCount));
+        } catch (SQLException e) {
+            showError("Error loading students: " + e.getMessage());
+        }
+    }
+
+    private void loadMaterials() {
+        try {
+            // Assuming materialDAO has a method to get all materials
+            List<Material> materials = materialDAO.all();
+            materialsTableModel.setRowCount(0);
+
+            for (Material material : materials) {
+                materialsTableModel.addRow(new Object[] {
+                        material.getId(),
+                        material.getTitle(),
+                        material.getTopic(),
+                        material.getLevel(),
+                        material.getFormat(),
+                        "View | Edit | Delete"
+                });
+            }
+        } catch (SQLException e) {
+            showError("Error loading materials: " + e.getMessage());
+        }
+    }
+
+    private void loadAssignments() {
+        try {
+            // If assignmentDAO doesn't exist, show placeholder data
+            if (assignmentDAO == null) {
+                showPlaceholderAssignments();
+                return;
+            }
+
+            List<Assignment> assignments = assignmentDAO.getAssignmentsByTeacher((int) teacher.getId());
+            assignmentsTableModel.setRowCount(0);
+
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM d, yyyy");
+
+            for (Assignment assignment : assignments) {
+                assignmentsTableModel.addRow(new Object[] {
+                        assignment.getId(),
+                        assignment.getTitle(),
+                        assignment.getSubject(),
+                        assignment.getDueDate().format(formatter),
+                        assignment.getDueStatus(),
+                        "Grade | Edit | Delete"
+                });
+            }
+        } catch (SQLException e) {
+            showError("Error loading assignments: " + e.getMessage());
+            showPlaceholderAssignments();
+        }
+    }
+
+    private void showPlaceholderAssignments() {
+        assignmentsTableModel.setRowCount(0);
+
+        // Add some placeholder assignments
+        String[] assignments = {
+                "Math Homework - Algebra Basics",
+                "Science Project - Biology Lab",
+                "History Essay - World War II",
+                "English Reading - Shakespeare"
+        };
+
+        String[] subjects = { "Mathematics", "Science", "History", "English" };
+        String[] dueDates = { "2024-12-01", "2024-12-05", "2024-12-10", "2024-12-15" };
+        String[] statuses = { "Due Soon", "Upcoming", "Upcoming", "Upcoming" };
+
+        for (int i = 0; i < assignments.length; i++) {
+            assignmentsTableModel.addRow(new Object[] {
+                    i + 1,
+                    assignments[i],
+                    subjects[i],
+                    dueDates[i],
+                    statuses[i],
+                    "Grade | Edit | Delete"
+            });
+        }
+    }
+
+    private void updateStats() {
+        // Update other stats
+        activeCoursesLabel.setText("4"); // Placeholder
+        assignmentsDueLabel.setText("2"); // Placeholder
+        avgProgressLabel.setText("85%"); // Placeholder
+    }
+
+    private void filterStudentsTable(String query) {
+        TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(studentsTableModel);
+        studentsTable.setRowSorter(sorter);
+
+        if (query.trim().isEmpty()) {
+            sorter.setRowFilter(null);
+        } else {
+            sorter.setRowFilter(RowFilter.regexFilter("(?i)" + query, 1, 2)); // Filter by name and email
+        }
+    }
+
+    // Dialog methods
+    private void showAddStudentDialog() {
+        JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), "Add Student", true);
+        dialog.setSize(400, 350);
+        dialog.setLocationRelativeTo(this);
+
+        JPanel panel = new JPanel(new BorderLayout(0, 20));
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        JLabel title = new JLabel("Add New Student");
+        title.setFont(SECTION_FONT);
+        title.setForeground(TEXT_PRIMARY);
+
+        // Form panel
+        JPanel formPanel = new JPanel(new GridLayout(4, 2, 10, 10));
+        formPanel.setBorder(BorderFactory.createEmptyBorder(20, 0, 20, 0));
+
+        JTextField nameField = new JTextField();
+        JTextField emailField = new JTextField();
+        JTextField usernameField = new JTextField();
+        JPasswordField passwordField = new JPasswordField();
+
+        formPanel.add(new JLabel("Full Name:"));
+        formPanel.add(nameField);
+        formPanel.add(new JLabel("Email:"));
+        formPanel.add(emailField);
+        formPanel.add(new JLabel("Username:"));
+        formPanel.add(usernameField);
+        formPanel.add(new JLabel("Password:"));
+        formPanel.add(passwordField);
+
+        // Button panel
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+
+        JButton cancelBtn = UIStyle.button("Cancel", GRAY_COLOR);
+        cancelBtn.addActionListener(e -> dialog.dispose());
+
+        JButton saveBtn = UIStyle.success("Save Student");
+        saveBtn.addActionListener(e -> {
+            String name = nameField.getText().trim();
+            String email = emailField.getText().trim();
+            String username = usernameField.getText().trim();
+            String password = new String(passwordField.getPassword());
+
+            if (name.isEmpty() || email.isEmpty() || username.isEmpty() || password.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Please fill all fields",
+                        "Validation Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            try {
+                // Create new user
+                User newStudent = new User();
+                newStudent.setFullName(name);
+                newStudent.setEmail(email);
+                newStudent.setUsername(username);
+                newStudent.setRole(Role.LEARNER);
+                newStudent.setAge(18); // Default age
+
+                // Create the user with hashed password
+                userDAO.createUserWithHashedPassword(newStudent, password);
+
+                JOptionPane.showMessageDialog(dialog, "Student added successfully!",
+                        "Success", JOptionPane.INFORMATION_MESSAGE);
+
+                loadStudents();
+                updateStats();
+                dialog.dispose();
+            } catch (SQLException ex) {
+                showError("Error adding student: " + ex.getMessage());
+            }
+        });
+
+        buttonPanel.add(cancelBtn);
+        buttonPanel.add(saveBtn);
+
+        panel.add(title, BorderLayout.NORTH);
+        panel.add(formPanel, BorderLayout.CENTER);
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+
+        dialog.add(panel);
+        dialog.setVisible(true);
+    }
+
+    private void showAddMaterialDialog() {
+        JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), "Add Course Material", true);
+        dialog.setSize(400, 400);
+        dialog.setLocationRelativeTo(this);
+
+        JPanel panel = new JPanel(new BorderLayout(0, 20));
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        JLabel title = new JLabel("Add Course Material");
+        title.setFont(SECTION_FONT);
+        title.setForeground(TEXT_PRIMARY);
+
+        // Form panel
+        JPanel formPanel = new JPanel(new GridLayout(5, 2, 10, 10));
+        formPanel.setBorder(BorderFactory.createEmptyBorder(20, 0, 20, 0));
+
+        JTextField titleField = new JTextField();
+        JTextField topicField = new JTextField();
+        JTextArea descriptionArea = new JTextArea(3, 20);
+        descriptionArea.setLineWrap(true);
+        descriptionArea.setWrapStyleWord(true);
+
+        JComboBox<String> levelCombo = new JComboBox<>(new String[] { "Elementary", "Middle", "High" });
+        JComboBox<String> formatCombo = new JComboBox<>(new String[] { "PDF", "Video", "Document", "Link" });
+
+        formPanel.add(new JLabel("Title:"));
+        formPanel.add(titleField);
+        formPanel.add(new JLabel("Topic:"));
+        formPanel.add(topicField);
+        formPanel.add(new JLabel("Description:"));
+        formPanel.add(new JScrollPane(descriptionArea));
+        formPanel.add(new JLabel("Level:"));
+        formPanel.add(levelCombo);
+        formPanel.add(new JLabel("Format:"));
+        formPanel.add(formatCombo);
+
+        // Button panel
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+
+        JButton cancelBtn = UIStyle.button("Cancel", GRAY_COLOR);
+        cancelBtn.addActionListener(e -> dialog.dispose());
+
+        JButton saveBtn = UIStyle.success("Save Material");
+        saveBtn.addActionListener(e -> {
+            String materialTitle = titleField.getText().trim();
+            String topic = topicField.getText().trim();
+            String description = descriptionArea.getText().trim();
+            String level = (String) levelCombo.getSelectedItem();
+            String format = (String) formatCombo.getSelectedItem();
+
+            if (materialTitle.isEmpty() || topic.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Please fill required fields",
+                        "Validation Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            try {
+                Material material = new Material();
+                material.setTitle(materialTitle);
+                material.setTopic(topic);
+                material.setDescription(description);
+                material.setLevel(level);
+                material.setFormat(format);
+                material.setTeacherId((int) teacher.getId());
+
+                // Save material - assuming materialDAO has create method
+                materialDAO.create(material);
+
+                JOptionPane.showMessageDialog(dialog, "Material added successfully!",
+                        "Success", JOptionPane.INFORMATION_MESSAGE);
+
+                loadMaterials();
+                dialog.dispose();
+            } catch (SQLException ex) {
+                showError("Error adding material: " + ex.getMessage());
+            }
+        });
+
+        buttonPanel.add(cancelBtn);
+        buttonPanel.add(saveBtn);
+
+        panel.add(title, BorderLayout.NORTH);
+        panel.add(formPanel, BorderLayout.CENTER);
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+
+        dialog.add(panel);
+        dialog.setVisible(true);
+    }
+
+    private void showCreateAssignmentDialog() {
+        JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), "Create Assignment", true);
+        dialog.setSize(500, 400);
+        dialog.setLocationRelativeTo(this);
+
+        JPanel panel = new JPanel(new BorderLayout(0, 20));
+        panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        JLabel title = new JLabel("Create New Assignment");
+        title.setFont(SECTION_FONT);
+        title.setForeground(TEXT_PRIMARY);
+
+        // Form panel
+        JPanel formPanel = new JPanel(new GridBagLayout());
+        formPanel.setBorder(BorderFactory.createEmptyBorder(20, 0, 20, 0));
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+
+        JTextField titleField = new JTextField(20);
+        JTextField subjectField = new JTextField(20);
+        JSpinner totalMarksSpinner = new JSpinner(new SpinnerNumberModel(100, 10, 200, 5));
+        JTextField dueDateField = new JTextField(10);
+        dueDateField.setText(LocalDate.now().plusDays(7).toString());
+
+        JTextArea descriptionArea = new JTextArea(4, 30);
+        descriptionArea.setLineWrap(true);
+        descriptionArea.setWrapStyleWord(true);
+
+        // Add components
+        formPanel.add(new JLabel("Title:"), gbc);
+        gbc.gridx = 1;
+        formPanel.add(titleField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        formPanel.add(new JLabel("Subject:"), gbc);
+        gbc.gridx = 1;
+        formPanel.add(subjectField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        formPanel.add(new JLabel("Total Marks:"), gbc);
+        gbc.gridx = 1;
+        formPanel.add(totalMarksSpinner, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        formPanel.add(new JLabel("Due Date (YYYY-MM-DD):"), gbc);
+        gbc.gridx = 1;
+        formPanel.add(dueDateField, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 4;
+        formPanel.add(new JLabel("Description:"), gbc);
+        gbc.gridx = 1;
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.weighty = 1.0;
+        formPanel.add(new JScrollPane(descriptionArea), gbc);
+
+        // Button panel
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+
+        JButton cancelBtn = UIStyle.button("Cancel", GRAY_COLOR);
+        cancelBtn.addActionListener(e -> dialog.dispose());
+
+        JButton saveBtn = UIStyle.primary("Create Assignment");
+        saveBtn.addActionListener(e -> {
+            String assignmentTitle = titleField.getText().trim();
+            String subject = subjectField.getText().trim();
+            @SuppressWarnings("unused")
+            String description = descriptionArea.getText().trim();
+            @SuppressWarnings("unused")
+            int totalMarks = (int) totalMarksSpinner.getValue();
+            String dueDate = dueDateField.getText().trim();
+
+            if (assignmentTitle.isEmpty() || subject.isEmpty() || dueDate.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Please fill required fields",
+                        "Validation Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            try {
+                // Add to table
+                assignmentsTableModel.addRow(new Object[] {
+                        assignmentsTableModel.getRowCount() + 1,
+                        assignmentTitle,
+                        subject,
+                        dueDate,
+                        "Upcoming",
+                        "Grade | Edit | Delete"
+                });
+
+                JOptionPane.showMessageDialog(dialog, "Assignment created successfully!",
+                        "Success", JOptionPane.INFORMATION_MESSAGE);
+
+                updateStats();
+                dialog.dispose();
+            } catch (Exception ex) {
+                showError("Error creating assignment: " + ex.getMessage());
+            }
+        });
+
+        buttonPanel.add(cancelBtn);
+        buttonPanel.add(saveBtn);
+
+        panel.add(title, BorderLayout.NORTH);
+        panel.add(formPanel, BorderLayout.CENTER);
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+
+        dialog.add(panel);
+        dialog.setVisible(true);
+    }
+
+    private void uploadMaterialFile() {
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setMultiSelectionEnabled(false);
+
+        int result = fileChooser.showOpenDialog(this);
+        if (result == JFileChooser.APPROVE_OPTION) {
+            File file = fileChooser.getSelectedFile();
+
+            String fileName = file.getName();
+            String fileExtension = "";
+            int lastDot = fileName.lastIndexOf('.');
+            if (lastDot > 0) {
+                fileExtension = fileName.substring(lastDot + 1).toUpperCase();
+            }
+
+            // Create material entry
+            Material material = new Material();
+            material.setTitle(fileName);
+            material.setTopic("Uploaded File");
+            material.setDescription("Uploaded file: " + fileName);
+            material.setLevel("General");
+            material.setFormat(fileExtension.isEmpty() ? "FILE" : fileExtension);
+            material.setFilePath(file.getAbsolutePath());
+            material.setTeacherId((int) teacher.getId());
+
+            try {
+                materialDAO.create(material);
+                JOptionPane.showMessageDialog(this,
+                        "File uploaded successfully!\n" + fileName,
+                        "Upload Complete",
+                        JOptionPane.INFORMATION_MESSAGE);
+                loadMaterials();
+            } catch (SQLException e) {
+                showError("Error saving file info to database: " + e.getMessage());
+            }
+        }
+    }
+
+    // Action methods
+    private void viewSchedule() {
+        JOptionPane.showMessageDialog(this,
+                "Schedule view would open here.\n\nToday's Classes:\n1. Math - 9:00 AM\n2. Science - 11:00 AM\n3. English - 2:00 PM",
+                "Today's Schedule",
+                JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void handleQuickAction(String action) {
+        switch (action) {
+            case "Create Assignment":
+                showCreateAssignmentDialog();
+                break;
+            case "Add Student":
+                showAddStudentDialog();
+                break;
+            case "Upload Material":
+                uploadMaterialFile();
+                break;
+            case "View Reports":
+                JOptionPane.showMessageDialog(this,
+                        "Report generation feature coming soon!",
+                        "Reports",
+                        JOptionPane.INFORMATION_MESSAGE);
+                break;
+        }
+    }
+
+    private void showError(String message) {
+        SwingUtilities.invokeLater(() -> {
+            JOptionPane.showMessageDialog(this, message,
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        });
+    }
+
+    // Button Renderer and Editors
+    class ButtonRenderer extends JButton implements TableCellRenderer {
+        public ButtonRenderer() {
+            setOpaque(true);
+            setFont(SMALL_FONT);
+            setForeground(PRIMARY_COLOR);
+            setBackground(CARD_BG);
+            setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean isSelected, boolean hasFocus, int row, int column) {
+            setText((value == null) ? "" : value.toString());
+            return this;
+        }
+    }
+
+    class StudentButtonEditor extends DefaultCellEditor {
+        private String label;
+
+        public StudentButtonEditor(JCheckBox checkBox) {
+            super(checkBox);
+            setClickCountToStart(1);
+        }
+
+        @Override
+        public Component getTableCellEditorComponent(JTable table, Object value,
+                boolean isSelected, int row, int column) {
+            label = (value == null) ? "" : value.toString();
+            JButton button = new JButton(label);
+            button.addActionListener(e -> {
+                int modelRow = table.convertRowIndexToModel(row);
+                handleStudentAction(modelRow, label);
+                fireEditingStopped();
+            });
+            return button;
+        }
+
+        @Override
+        public Object getCellEditorValue() {
+            return label;
+        }
+    }
+
+    class MaterialButtonEditor extends DefaultCellEditor {
+        private String label;
+
+        public MaterialButtonEditor(JCheckBox checkBox) {
+            super(checkBox);
+            setClickCountToStart(1);
+        }
+
+        @Override
+        public Component getTableCellEditorComponent(JTable table, Object value,
+                boolean isSelected, int row, int column) {
+            label = (value == null) ? "" : value.toString();
+            JButton button = new JButton(label);
+            button.addActionListener(e -> {
+                int modelRow = table.convertRowIndexToModel(row);
+                handleMaterialAction(modelRow, label);
+                fireEditingStopped();
+            });
+            return button;
+        }
+
+        @Override
+        public Object getCellEditorValue() {
+            return label;
+        }
+    }
+
+    class AssignmentButtonEditor extends DefaultCellEditor {
+        private String label;
+
+        public AssignmentButtonEditor(JCheckBox checkBox) {
+            super(checkBox);
+            setClickCountToStart(1);
+        }
+
+        @Override
+        public Component getTableCellEditorComponent(JTable table, Object value,
+                boolean isSelected, int row, int column) {
+            label = (value == null) ? "" : value.toString();
+            JButton button = new JButton(label);
+            button.addActionListener(e -> {
+                int modelRow = table.convertRowIndexToModel(row);
+                handleAssignmentAction(modelRow, label);
+                fireEditingStopped();
+            });
+            return button;
+        }
+
+        @Override
+        public Object getCellEditorValue() {
+            return label;
+        }
+    }
+
+    private void handleStudentAction(int row, String action) {
+        try {
+            long studentId = (long) studentsTableModel.getValueAt(row, 0);
+            String studentName = (String) studentsTableModel.getValueAt(row, 1);
+            String studentEmail = (String) studentsTableModel.getValueAt(row, 2);
+
+            if (action.contains("View")) {
+                // View student details
+                JTextArea textArea = new JTextArea(8, 40);
+                textArea.setText(String.format(
+                        "Student Details:\n\n" +
+                                "ID: %d\n" +
+                                "Name: %s\n" +
+                                "Email: %s\n" +
+                                "Age: %d\n" +
+                                "Progress: %s\n" +
+                                "Grade: %s",
+                        studentId,
+                        studentName,
+                        studentEmail,
+                        studentsTableModel.getValueAt(row, 3),
+                        studentsTableModel.getValueAt(row, 4),
+                        studentsTableModel.getValueAt(row, 5)));
+                textArea.setEditable(false);
+                textArea.setCaretPosition(0);
+
+                JScrollPane scrollPane = new JScrollPane(textArea);
+                JOptionPane.showMessageDialog(this, scrollPane,
+                        "Student Information", JOptionPane.INFORMATION_MESSAGE);
+            } else if (action.contains("Edit")) {
+                // Edit student
+                String newName = JOptionPane.showInputDialog(this,
+                        "Enter new name for student:", studentName);
+                if (newName != null && !newName.trim().isEmpty()) {
+                    studentsTableModel.setValueAt(newName, row, 1);
+                    JOptionPane.showMessageDialog(this, "Student updated successfully!");
+                }
+            } else if (action.contains("Delete")) {
+                // Delete student
+                int confirm = JOptionPane.showConfirmDialog(this,
+                        String.format("Are you sure you want to delete %s?", studentName),
+                        "Confirm Delete",
+                        JOptionPane.YES_NO_OPTION);
+
+                if (confirm == JOptionPane.YES_OPTION) {
+                    // Note: UserDAO doesn't have delete method, so we just remove from table
+                    studentsTableModel.removeRow(row);
+                    totalStudentsLabel.setText(String.valueOf(Integer.parseInt(totalStudentsLabel.getText()) - 1));
+                    JOptionPane.showMessageDialog(this, "Student removed from view!");
+                }
+            }
+        } catch (Exception e) {
+            showError("Error performing action: " + e.getMessage());
+        }
+    }
+
+    private void handleMaterialAction(int row, String action) {
+        try {
+            long materialId = (long) materialsTableModel.getValueAt(row, 0);
+            String materialTitle = (String) materialsTableModel.getValueAt(row, 1);
+            String materialTopic = (String) materialsTableModel.getValueAt(row, 2);
+
+            if (action.contains("View")) {
+                // View material details
+                JTextArea textArea = new JTextArea(10, 40);
+                textArea.setText(String.format(
+                        "Material Details:\n\n" +
+                                "ID: %d\n" +
+                                "Title: %s\n" +
+                                "Topic: %s\n" +
+                                "Level: %s\n" +
+                                "Format: %s",
+                        materialId,
+                        materialTitle,
+                        materialTopic,
+                        materialsTableModel.getValueAt(row, 3),
+                        materialsTableModel.getValueAt(row, 4)));
+                textArea.setEditable(false);
+                textArea.setCaretPosition(0);
+
+                JScrollPane scrollPane = new JScrollPane(textArea);
+                JOptionPane.showMessageDialog(this, scrollPane,
+                        "Material Details", JOptionPane.INFORMATION_MESSAGE);
+            } else if (action.contains("Edit")) {
+                // Edit material
+                String newTitle = JOptionPane.showInputDialog(this,
+                        "Enter new title for material:", materialTitle);
+                if (newTitle != null && !newTitle.trim().isEmpty()) {
+                    materialsTableModel.setValueAt(newTitle, row, 1);
+                    JOptionPane.showMessageDialog(this, "Material updated successfully!");
+                }
+            } else if (action.contains("Delete")) {
+                // Delete material
+                int confirm = JOptionPane.showConfirmDialog(this,
+                        String.format("Are you sure you want to delete '%s'?", materialTitle),
+                        "Confirm Delete",
+                        JOptionPane.YES_NO_OPTION);
+
+                if (confirm == JOptionPane.YES_OPTION) {
+                    materialsTableModel.removeRow(row);
+                    JOptionPane.showMessageDialog(this, "Material deleted successfully!");
+                }
+            }
+        } catch (Exception e) {
+            showError("Error performing action: " + e.getMessage());
+        }
+    }
+
+    private void handleAssignmentAction(int row, String action) {
+        try {
+            @SuppressWarnings("unused")
+            long assignmentId = (long) assignmentsTableModel.getValueAt(row, 0);
+            String assignmentTitle = (String) assignmentsTableModel.getValueAt(row, 1);
+            @SuppressWarnings("unused")
+            String assignmentSubject = (String) assignmentsTableModel.getValueAt(row, 2);
+
+            if (action.contains("Grade")) {
+                // Grade assignment
+                JDialog gradeDialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this),
+                        "Grade Assignment: " + assignmentTitle, true);
+                gradeDialog.setSize(400, 300);
+                gradeDialog.setLocationRelativeTo(this);
+
+                JPanel panel = new JPanel(new BorderLayout(0, 20));
+                panel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+                JLabel title = new JLabel("Grade Assignment");
+                title.setFont(SECTION_FONT);
+                title.setForeground(TEXT_PRIMARY);
+
+                // Grading form
+                JPanel formPanel = new JPanel(new GridLayout(4, 2, 10, 10));
+                formPanel.setBorder(BorderFactory.createEmptyBorder(20, 0, 20, 0));
+
+                JTextField studentField = new JTextField();
+                studentField.setText("Student Name");
+                studentField.setEditable(false);
+
+                JSpinner marksSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 100, 1));
+                JTextArea feedbackArea = new JTextArea(3, 20);
+                feedbackArea.setLineWrap(true);
+
+                formPanel.add(new JLabel("Student:"));
+                formPanel.add(studentField);
+                formPanel.add(new JLabel("Marks:"));
+                formPanel.add(marksSpinner);
+                formPanel.add(new JLabel("Feedback:"));
+                formPanel.add(new JScrollPane(feedbackArea));
+
+                // Button panel
+                JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+
+                JButton cancelBtn = UIStyle.button("Cancel", GRAY_COLOR);
+                cancelBtn.addActionListener(e -> gradeDialog.dispose());
+
+                JButton saveBtn = UIStyle.primary("Save Grade");
+                saveBtn.addActionListener(e -> {
+                    JOptionPane.showMessageDialog(gradeDialog,
+                            "Grade saved successfully!",
+                            "Success", JOptionPane.INFORMATION_MESSAGE);
+                    gradeDialog.dispose();
+                });
+
+                buttonPanel.add(cancelBtn);
+                buttonPanel.add(saveBtn);
+
+                panel.add(title, BorderLayout.NORTH);
+                panel.add(formPanel, BorderLayout.CENTER);
+                panel.add(buttonPanel, BorderLayout.SOUTH);
+
+                gradeDialog.add(panel);
+                gradeDialog.setVisible(true);
+            } else if (action.contains("Edit")) {
+                // Edit assignment
+                String newTitle = JOptionPane.showInputDialog(this,
+                        "Enter new title for assignment:", assignmentTitle);
+                if (newTitle != null && !newTitle.trim().isEmpty()) {
+                    assignmentsTableModel.setValueAt(newTitle, row, 1);
+                    JOptionPane.showMessageDialog(this, "Assignment updated successfully!");
+                }
+            } else if (action.contains("Delete")) {
+                // Delete assignment
+                int confirm = JOptionPane.showConfirmDialog(this,
+                        String.format("Are you sure you want to delete '%s'?", assignmentTitle),
+                        "Confirm Delete",
+                        JOptionPane.YES_NO_OPTION);
+
+                if (confirm == JOptionPane.YES_OPTION) {
+                    assignmentsTableModel.removeRow(row);
+                    assignmentsDueLabel.setText(String.valueOf(Integer.parseInt(assignmentsDueLabel.getText()) - 1));
+                    JOptionPane.showMessageDialog(this, "Assignment deleted successfully!");
+                }
+            }
+        } catch (Exception e) {
+            showError("Error performing action: " + e.getMessage());
+        }
+    }
+}

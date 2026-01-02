@@ -1,0 +1,13 @@
+package iems.ui;
+
+import iems.model.User;
+import javax.swing.*;
+import java.awt.*;
+
+public class CommunicationsPanel extends JPanel {
+    public CommunicationsPanel(User user) {
+        setLayout(new BorderLayout());
+        setBackground(new Color(241, 245, 249));
+        add(new JLabel("Communications Panel - " + user.getFullName(), SwingConstants.CENTER), BorderLayout.CENTER);
+    }
+}

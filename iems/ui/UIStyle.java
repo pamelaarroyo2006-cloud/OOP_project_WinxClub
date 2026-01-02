@@ -1,0 +1,276 @@
+package iems.ui;
+
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.table.DefaultTableCellRenderer;
+import java.awt.*;
+
+public final class UIStyle {
+    private UIStyle() {
+    }
+
+    // Color palette
+    public static final Color PRIMARY_BLUE = new Color(59, 130, 246);
+    public static final Color SUCCESS_GREEN = new Color(34, 197, 94);
+    public static final Color WARNING_ORANGE = new Color(249, 115, 22);
+    public static final Color INFO_PURPLE = new Color(139, 92, 246);
+    public static final Color NEUTRAL_GRAY = new Color(107, 114, 128);
+    public static final Color DARK_BLUE = new Color(30, 41, 59);
+    public static final Color LIGHT_BG = new Color(241, 245, 249);
+    public static final Color CARD_BG = Color.WHITE;
+    public static final Color TEXT_PRIMARY = new Color(33, 37, 41);
+    public static final Color TEXT_SECONDARY = new Color(108, 117, 125);
+    public static final Color BORDER_COLOR = new Color(222, 226, 230);
+
+    // Fonts
+    public static final Font TITLE = new Font("Segoe UI", Font.BOLD, 20);
+    public static final Font SECTION = new Font("Segoe UI", Font.BOLD, 16);
+    public static final Font BODY = new Font("Segoe UI", Font.PLAIN, 14);
+    public static final Font SMALL = new Font("Segoe UI", Font.PLAIN, 12);
+    public static final Font BUTTON = new Font("Segoe UI", Font.BOLD, 13);
+
+    // Layout helpers
+    public static JPanel page() {
+        JPanel p = new JPanel(new BorderLayout(12, 12));
+        p.setBorder(new EmptyBorder(16, 16, 16, 16));
+        p.setBackground(LIGHT_BG);
+        return p;
+    }
+
+    public static JPanel card() {
+        JPanel p = new JPanel(new BorderLayout());
+        p.setBackground(CARD_BG);
+        p.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_COLOR),
+                new EmptyBorder(16, 16, 16, 16)));
+        return p;
+    }
+
+    public static JLabel title(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(TITLE);
+        l.setForeground(TEXT_PRIMARY);
+        return l;
+    }
+
+    public static JLabel section(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(SECTION);
+        l.setForeground(TEXT_PRIMARY);
+        return l;
+    }
+
+    // Button factories
+    public static JButton primary(String text) {
+        return styledButton(text, PRIMARY_BLUE);
+    }
+
+    public static JButton success(String text) {
+        return styledButton(text, SUCCESS_GREEN);
+    }
+
+    public static JButton warning(String text) {
+        return styledButton(text, WARNING_ORANGE);
+    }
+
+    public static JButton info(String text) {
+        return styledButton(text, INFO_PURPLE);
+    }
+
+    public static JButton neutral(String text) {
+        return styledButton(text, NEUTRAL_GRAY);
+    }
+
+    public static JButton button(String text, Color bg) {
+        return styledButton(text, bg);
+    }
+
+    private static JButton styledButton(String text, Color bg) {
+        JButton b = new JButton(text);
+        b.setFont(BUTTON);
+        b.setBackground(bg);
+        b.setForeground(Color.WHITE); // Always visible text
+        b.setFocusPainted(false);
+        b.setOpaque(true);
+        b.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(bg.darker(), 1),
+                new EmptyBorder(10, 20, 10, 20)));
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        // Hover effect
+        b.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                if (b.isEnabled()) {
+                    b.setBackground(bg.darker());
+                }
+            }
+
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                if (b.isEnabled()) {
+                    b.setBackground(bg);
+                }
+            }
+        });
+
+        return b;
+    }
+
+    // Stat card
+    public static JPanel createStatCard(String title, String value, Color valueColor) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBackground(CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_COLOR),
+                new EmptyBorder(15, 20, 15, 20)));
+        card.setPreferredSize(new Dimension(150, 80));
+
+        JLabel valueLabel = new JLabel(value);
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        valueLabel.setForeground(valueColor);
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(SMALL);
+        titleLabel.setForeground(TEXT_SECONDARY);
+
+        JPanel content = new JPanel(new BorderLayout(0, 5));
+        content.setBackground(CARD_BG);
+        content.add(valueLabel, BorderLayout.CENTER);
+        content.add(titleLabel, BorderLayout.SOUTH);
+
+        card.add(content, BorderLayout.CENTER);
+        return card;
+    }
+
+    // Table styling
+    public static void styleTable(JTable t) {
+        t.setRowHeight(40);
+        t.setShowGrid(false);
+        t.setIntercellSpacing(new Dimension(0, 0));
+        t.setSelectionBackground(new Color(59, 130, 246, 30));
+        t.setSelectionForeground(TEXT_PRIMARY);
+        t.setFont(BODY);
+
+        t.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 14));
+        t.getTableHeader().setBackground(new Color(248, 249, 250));
+        t.getTableHeader().setForeground(TEXT_PRIMARY);
+        t.getTableHeader().setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER_COLOR));
+
+        t.setDefaultRenderer(Object.class, new AlternateRowRenderer());
+    }
+
+    private static class AlternateRowRenderer extends DefaultTableCellRenderer {
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean isSelected, boolean hasFocus, int row, int column) {
+            Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            if (!isSelected) {
+                c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(248, 249, 250));
+            }
+            setBorder(new EmptyBorder(0, 15, 0, 15));
+            return c;
+        }
+    }
+
+    // Input fields
+    public static JTextField styledTextField(int columns) {
+        JTextField field = new JTextField(columns);
+        field.setFont(BODY);
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_COLOR),
+                new EmptyBorder(10, 15, 10, 15)));
+        return field;
+    }
+
+    public static JTextArea styledTextArea(int rows, int columns) {
+        JTextArea area = new JTextArea(rows, columns);
+        area.setFont(BODY);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_COLOR),
+                new EmptyBorder(10, 15, 10, 15)));
+        return area;
+    }
+
+    public static <T> JComboBox<T> styledComboBox(T[] items) {
+        JComboBox<T> combo = new JComboBox<>(items);
+        combo.setFont(BODY);
+        combo.setBackground(Color.WHITE);
+        combo.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_COLOR),
+                new EmptyBorder(5, 10, 5, 10)));
+        return combo;
+    }
+
+    // Sidebar navigation
+    public static JLabel navLabel(String text, boolean active) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Segoe UI", active ? Font.BOLD : Font.PLAIN, 14));
+        label.setForeground(active ? Color.WHITE : new Color(200, 210, 220));
+        label.setBorder(new EmptyBorder(12, 20, 12, 20));
+        label.setOpaque(true);
+        label.setBackground(active ? PRIMARY_BLUE : DARK_BLUE);
+        label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return label;
+    }
+
+    public static JButton sidebarButton(String text, boolean active) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", active ? Font.BOLD : Font.PLAIN, 14));
+        button.setForeground(active ? Color.WHITE : new Color(220, 230, 240));
+        button.setBackground(active ? PRIMARY_BLUE : DARK_BLUE);
+        button.setFocusPainted(false);
+        button.setBorderPainted(false);
+        button.setContentAreaFilled(true);
+        button.setOpaque(true);
+        button.setBorder(new EmptyBorder(12, 20, 12, 20));
+        button.setHorizontalAlignment(SwingConstants.LEFT);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        // Hover effect for sidebar buttons
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                if (!active) {
+                    button.setBackground(new Color(45, 55, 75));
+                    button.setForeground(new Color(240, 240, 240));
+                }
+            }
+
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                if (!active) {
+                    button.setBackground(DARK_BLUE);
+                    button.setForeground(new Color(220, 230, 240));
+                }
+            }
+        });
+
+        return button;
+    }
+
+    // Flat button for secondary actions
+    public static JButton flatButton(String text, Color textColor) {
+        JButton b = new JButton(text);
+        b.setFont(BUTTON);
+        b.setBackground(Color.WHITE);
+        b.setForeground(textColor);
+        b.setFocusPainted(false);
+        b.setBorderPainted(false);
+        b.setContentAreaFilled(false);
+        b.setOpaque(true);
+        b.setBorder(new EmptyBorder(8, 16, 8, 16));
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        // Hover effect
+        b.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                b.setBackground(new Color(240, 240, 240));
+            }
+
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                b.setBackground(Color.WHITE);
+            }
+        });
+
+        return b;
+    }
+}

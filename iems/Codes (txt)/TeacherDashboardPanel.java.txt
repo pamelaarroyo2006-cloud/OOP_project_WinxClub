@@ -1,0 +1,356 @@
+package iems.ui;
+
+import iems.dao.*;
+import iems.model.*;
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.util.List;
+
+public class TeacherDashboardPanel extends JPanel {
+    private final User teacher;
+    private DefaultTableModel studentsTableModel;
+    private DefaultTableModel materialsTableModel;
+    private DefaultTableModel assignmentsTableModel;
+    private JTable studentsTable;
+    private JTable materialsTable;
+    private JTable assignmentsTable;
+    private JTabbedPane mainTabbedPane;
+
+    private JLabel totalStudentsLabel;
+    private JLabel activeCoursesLabel;
+    private JLabel assignmentsDueLabel;
+    private JLabel avgProgressLabel;
+
+    private UserDAO userDAO;
+    private MaterialDAO materialDAO;
+    private AssignmentDAO assignmentDAO;
+    @SuppressWarnings("unused")
+    private GradeDAO gradeDAO;
+    @SuppressWarnings("unused")
+    private AttendanceDAO attendanceDAO;
+
+    public TeacherDashboardPanel(User teacher) {
+        this.teacher = teacher;
+        try {
+            userDAO = new UserDAO();
+            materialDAO = new MaterialDAO();
+            assignmentDAO = new AssignmentDAO();
+            gradeDAO = new GradeDAO();
+            attendanceDAO = new AttendanceDAO();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Database error: " + e.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+
+        initializeTableModels();
+        initializeUI();
+        loadDashboardData();
+    }
+
+    private void initializeTableModels() {
+        studentsTableModel = new DefaultTableModel(
+                new String[] { "ID", "Name", "Email", "Age", "Progress", "Grade", "Actions" }, 0);
+        studentsTable = new JTable(studentsTableModel);
+
+        materialsTableModel = new DefaultTableModel(
+                new String[] { "ID", "Title", "Topic", "Level", "Format", "Actions" }, 0);
+        materialsTable = new JTable(materialsTableModel);
+
+        assignmentsTableModel = new DefaultTableModel(
+                new String[] { "ID", "Title", "Subject", "Due Date", "Status", "Actions" }, 0);
+        assignmentsTable = new JTable(assignmentsTableModel);
+    }
+
+    private void initializeUI() {
+        setLayout(new BorderLayout());
+        setBackground(UIStyle.LIGHT_BG);
+
+        // Header with stats
+        JPanel header = UIStyle.card();
+        JLabel title = UIStyle.title("Teacher Dashboard");
+        JLabel breadcrumb = UIStyle.section(" / " + teacher.getFullName());
+        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        left.setOpaque(false);
+        left.add(title);
+        left.add(breadcrumb);
+
+        JPanel stats = new JPanel(new FlowLayout(FlowLayout.RIGHT, 20, 0));
+        stats.setOpaque(false);
+        totalStudentsLabel = new JLabel("0");
+        activeCoursesLabel = new JLabel("0");
+        assignmentsDueLabel = new JLabel("0");
+        avgProgressLabel = new JLabel("0%");
+        stats.add(UIStyle.createStatCard("Total Students", totalStudentsLabel.getText(), UIStyle.PRIMARY_BLUE));
+        stats.add(UIStyle.createStatCard("Active Courses", activeCoursesLabel.getText(), UIStyle.SUCCESS_GREEN));
+        stats.add(UIStyle.createStatCard("Assignments Due", assignmentsDueLabel.getText(), UIStyle.WARNING_ORANGE));
+        stats.add(UIStyle.createStatCard("Avg. Progress", avgProgressLabel.getText(), UIStyle.NEUTRAL_GRAY));
+
+        header.add(left, BorderLayout.WEST);
+        header.add(stats, BorderLayout.EAST);
+        add(header, BorderLayout.NORTH);
+
+        // Tabs
+        mainTabbedPane = new JTabbedPane();
+        mainTabbedPane.addTab("👥 Students", createStudentsPanel());
+        mainTabbedPane.addTab("📚 Materials", createMaterialsPanel());
+        mainTabbedPane.addTab("📝 Assignments", createAssignmentsPanel());
+        mainTabbedPane.addTab("🛠 Tools", createToolsPanel()); // NEW TAB
+
+        add(mainTabbedPane, BorderLayout.CENTER);
+    }
+
+    private JPanel createStudentsPanel() {
+        JPanel panel = UIStyle.page();
+        panel.add(UIStyle.section("Student Management"), BorderLayout.NORTH);
+        UIStyle.styleTable(studentsTable);
+        panel.add(new JScrollPane(studentsTable), BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel createMaterialsPanel() {
+        JPanel panel = UIStyle.page();
+        panel.add(UIStyle.section("Course Materials"), BorderLayout.NORTH);
+        UIStyle.styleTable(materialsTable);
+        panel.add(new JScrollPane(materialsTable), BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel createAssignmentsPanel() {
+        JPanel panel = UIStyle.page();
+        panel.add(UIStyle.section("Assignments"), BorderLayout.NORTH);
+        UIStyle.styleTable(assignmentsTable);
+        panel.add(new JScrollPane(assignmentsTable), BorderLayout.CENTER);
+        return panel;
+    }
+
+    // 🔹 NEW: Teacher Tools Panel
+    private JPanel createToolsPanel() {
+        JPanel panel = UIStyle.page();
+        panel.add(UIStyle.section("Teacher Tools"), BorderLayout.NORTH);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+        buttons.setOpaque(false);
+
+        JButton uploadBtn = UIStyle.primary("Upload Material");
+        JButton editBtn = UIStyle.success("Edit Material");
+        JButton deleteBtn = UIStyle.warning("Delete Material");
+        JButton gradeBtn = UIStyle.primary("Give Grade");
+        JButton attendanceBtn = UIStyle.success("Mark Attendance");
+        JButton exportBtn = UIStyle.info("Export Reports");
+
+        buttons.add(uploadBtn);
+        buttons.add(editBtn);
+        buttons.add(deleteBtn);
+        buttons.add(gradeBtn);
+        buttons.add(attendanceBtn);
+        buttons.add(exportBtn);
+
+        JPanel buttonCard = UIStyle.card();
+        buttonCard.add(buttons, BorderLayout.CENTER);
+        panel.add(buttonCard, BorderLayout.SOUTH);
+
+        // Actions
+        uploadBtn.addActionListener(e -> uploadMaterial());
+        editBtn.addActionListener(e -> editMaterial());
+        deleteBtn.addActionListener(e -> deleteMaterial());
+        gradeBtn.addActionListener(e -> giveGrade());
+        attendanceBtn.addActionListener(e -> markAttendance());
+        exportBtn.addActionListener(e -> exportReports());
+
+        return panel;
+    }
+
+    private void exportReports() {
+        try {
+            // Create a CSV file with combined logs
+            java.io.FileWriter writer = new java.io.FileWriter("teacher_reports.csv");
+
+            // Header
+            writer.write("=== Teacher Reports ===\n");
+
+            // Students
+            writer.write("\n-- Students --\n");
+            for (int i = 0; i < studentsTableModel.getRowCount(); i++) {
+                writer.write(studentsTableModel.getValueAt(i, 0) + "," +
+                        studentsTableModel.getValueAt(i, 1) + "," +
+                        studentsTableModel.getValueAt(i, 2) + "," +
+                        studentsTableModel.getValueAt(i, 3) + "," +
+                        studentsTableModel.getValueAt(i, 4) + "," +
+                        studentsTableModel.getValueAt(i, 5) + "\n");
+            }
+
+            // Materials
+            writer.write("\n-- Materials --\n");
+            for (int i = 0; i < materialsTableModel.getRowCount(); i++) {
+                writer.write(materialsTableModel.getValueAt(i, 0) + "," +
+                        materialsTableModel.getValueAt(i, 1) + "," +
+                        materialsTableModel.getValueAt(i, 2) + "," +
+                        materialsTableModel.getValueAt(i, 3) + "," +
+                        materialsTableModel.getValueAt(i, 4) + "\n");
+            }
+
+            // Assignments
+            writer.write("\n-- Assignments --\n");
+            for (int i = 0; i < assignmentsTableModel.getRowCount(); i++) {
+                writer.write(assignmentsTableModel.getValueAt(i, 0) + "," +
+                        assignmentsTableModel.getValueAt(i, 1) + "," +
+                        assignmentsTableModel.getValueAt(i, 2) + "," +
+                        assignmentsTableModel.getValueAt(i, 3) + "," +
+                        assignmentsTableModel.getValueAt(i, 4) + "\n");
+            }
+
+            writer.close();
+
+            JOptionPane.showMessageDialog(this,
+                    "Exported teacher_reports.csv successfully",
+                    "Export Complete", JOptionPane.INFORMATION_MESSAGE);
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                    "Error exporting reports: " + e.getMessage(),
+                    "Export Failed", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    // 🔹 Action Methods
+    private void uploadMaterial() {
+        JFileChooser chooser = new JFileChooser();
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            JOptionPane.showMessageDialog(this,
+                    "Uploaded: " + chooser.getSelectedFile().getName(),
+                    "Upload Complete", JOptionPane.INFORMATION_MESSAGE);
+            // TODO: integrate DAO create logic
+        }
+    }
+
+    private void editMaterial() {
+        JOptionPane.showMessageDialog(this, "Edit material dialog here.");
+        // TODO: implement edit logic
+    }
+
+    private void deleteMaterial() {
+        JOptionPane.showMessageDialog(this, "Delete material logic here.");
+        // TODO: implement delete logic
+    }
+
+    private void giveGrade() {
+        JOptionPane.showMessageDialog(this, "Grade entry dialog here.");
+        // TODO: implement grade logic
+    }
+
+    private void markAttendance() {
+        try {
+            // Get all learners from UserDAO
+            List<User> students = userDAO.getAllUsers();
+            students.removeIf(u -> u.getRole() != Role.LEARNER);
+
+            // Build panel with checkboxes
+            JPanel panel = new JPanel(new GridLayout(students.size(), 2, 5, 5));
+            java.util.Map<User, JCheckBox> checkboxes = new java.util.HashMap<>();
+
+            for (User s : students) {
+                JCheckBox present = new JCheckBox("Present");
+                checkboxes.put(s, present);
+                panel.add(new JLabel(s.getFullName()));
+                panel.add(present);
+            }
+
+            int result = JOptionPane.showConfirmDialog(this, panel,
+                    "Mark Attendance (" + java.time.LocalDate.now() + ")",
+                    JOptionPane.OK_CANCEL_OPTION);
+
+            if (result == JOptionPane.OK_OPTION) {
+                AttendanceDAO dao = new AttendanceDAO();
+                LocalDate today = java.time.LocalDate.now();
+
+                for (User s : students) {
+                    Attendance a = new Attendance();
+                    a.setUserId(s.getId());
+                    a.setDate(today);
+                    a.setStatus(checkboxes.get(s).isSelected() ? "Present" : "Absent");
+                    dao.create(a);
+                }
+
+                JOptionPane.showMessageDialog(this,
+                        "Attendance saved for " + today,
+                        "Success", JOptionPane.INFORMATION_MESSAGE);
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Error saving attendance: " + ex.getMessage(),
+                    "Attendance Failed", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void loadDashboardData() {
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            protected Void doInBackground() throws Exception {
+                loadStudents();
+                loadMaterials();
+                loadAssignments();
+                return null;
+            }
+        };
+        worker.execute();
+    }
+
+    private void loadStudents() {
+        try {
+            List<User> allUsers = userDAO.getAllUsers();
+            studentsTableModel.setRowCount(0);
+            int count = 0;
+            for (User u : allUsers) {
+                if (u.getRole() == Role.LEARNER) {
+                    count++;
+                    studentsTableModel.addRow(new Object[] {
+                            u.getId(), u.getFullName(), u.getEmail(), u.getAge(),
+                            "85%", "B+", "Actions"
+                    });
+                }
+            }
+            totalStudentsLabel.setText(String.valueOf(count));
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error loading students: " + e.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void loadMaterials() {
+        try {
+            List<Material> materials = materialDAO.all();
+            materialsTableModel.setRowCount(0);
+            for (Material m : materials) {
+                materialsTableModel.addRow(new Object[] {
+                        m.getId(), m.getTitle(), m.getTopic(), m.getLevel(), m.getFormat(), "Actions"
+                });
+            }
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error loading materials: " + e.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void loadAssignments() {
+        try {
+            List<Assignment> assignments = assignmentDAO.all();
+            assignmentsTableModel.setRowCount(0);
+            for (Assignment a : assignments) {
+                assignmentsTableModel.addRow(new Object[] {
+                        a.getId(),
+                        a.getTitle(),
+                        a.getSubject(),
+                        a.getDueDate(),
+                        a.getDueStatus(),
+                        "Actions"
+                });
+            }
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this,
+                    "Error loading assignments: " + e.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+}

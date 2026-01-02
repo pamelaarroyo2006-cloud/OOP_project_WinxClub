@@ -1,0 +1,486 @@
+package iems.dao;
+
+import iems.model.Grade;
+import java.sql.*;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+public class GradeDAO {
+    private Connection connection;
+
+    public GradeDAO() throws SQLException {
+        this.connection = Db.get(); // Using your existing Db class
+    }
+
+    // Submit or update a grade
+    public boolean submitGrade(Grade grade) throws SQLException {
+        String sql = """
+                INSERT INTO assignment_submissions (assignment_id, student_id, grade, feedback, graded_by, graded_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                grade = ?, feedback = ?, graded_by = ?, graded_at = ?
+                """;
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, grade.getAssignmentId());
+            ps.setLong(2, grade.getStudentId());
+            ps.setInt(3, grade.getMarks());
+            ps.setString(4, grade.getFeedback());
+            ps.setLong(5, grade.getGradedBy());
+            ps.setTimestamp(6, Timestamp.valueOf(grade.getGradedAt()));
+
+            // Values for update
+            ps.setInt(7, grade.getMarks());
+            ps.setString(8, grade.getFeedback());
+            ps.setLong(9, grade.getGradedBy());
+            ps.setTimestamp(10, Timestamp.valueOf(grade.getGradedAt()));
+
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    // Get grades by teacher (grades for assignments created by the teacher)
+    public List<Grade> getGradesByTeacher(long teacherId) throws SQLException {
+        List<Grade> grades = new ArrayList<>();
+        String sql = """
+                SELECT g.*, u.full_name as student_name, a.title as assignment_title, a.total_marks
+                FROM assignment_submissions g
+                JOIN users u ON g.student_id = u.id
+                JOIN assignments a ON g.assignment_id = a.id
+                WHERE a.teacher_id = ? AND g.grade IS NOT NULL
+                ORDER BY g.graded_at DESC
+                """;
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                grades.add(map(rs));
+            }
+        }
+        return grades;
+    }
+
+    // Get grades by assignment
+    public List<Grade> getGradesByAssignment(long assignmentId) throws SQLException {
+        List<Grade> grades = new ArrayList<>();
+        String sql = """
+                SELECT g.*, u.full_name as student_name, u.email, a.title as assignment_title, a.total_marks
+                FROM assignment_submissions g
+                JOIN users u ON g.student_id = u.id
+                JOIN assignments a ON g.assignment_id = a.id
+                WHERE g.assignment_id = ?
+                ORDER BY u.full_name
+                """;
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, assignmentId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                grades.add(map(rs));
+            }
+        }
+        return grades;
+    }
+
+    // Get grades by student
+    public List<Grade> getGradesByStudent(long studentId) throws SQLException {
+        List<Grade> grades = new ArrayList<>();
+        String sql = """
+                SELECT g.*, a.title as assignment_title, a.subject, a.total_marks, u.full_name as teacher_name
+                FROM assignment_submissions g
+                JOIN assignments a ON g.assignment_id = a.id
+                JOIN users u ON a.teacher_id = u.id
+                WHERE g.student_id = ? AND g.grade IS NOT NULL
+                ORDER BY a.due_date DESC
+                """;
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, studentId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                grades.add(map(rs));
+            }
+        }
+        return grades;
+    }
+
+    // Get a specific grade (assignment + student)
+    public Grade getGrade(long assignmentId, long studentId) throws SQLException {
+        String sql = """
+                SELECT g.*, u.full_name as student_name, a.title as assignment_title, a.total_marks
+                FROM assignment_submissions g
+                JOIN users u ON g.student_id = u.id
+                JOIN assignments a ON g.assignment_id = a.id
+                WHERE g.assignment_id = ? AND g.student_id = ?
+                """;
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, assignmentId);
+            ps.setLong(2, studentId);
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                return map(rs);
+            }
+            return null;
+        }
+    }
+
+    // Get average grade for a teacher's assignments
+    public double getAverageGradeByTeacher(long teacherId) throws SQLException {
+        String sql = """
+                SELECT AVG(g.grade) as average_grade
+                FROM assignment_submissions g
+                JOIN assignments a ON g.assignment_id = a.id
+                WHERE a.teacher_id = ? AND g.grade IS NOT NULL
+                """;
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                return rs.getDouble("average_grade");
+            }
+            return 0.0;
+        }
+    }
+
+    // Get grade statistics for a teacher
+    public GradeStatistics getGradeStatistics(long teacherId) throws SQLException {
+        GradeStatistics stats = new GradeStatistics();
+        String sql = """
+                SELECT
+                    COUNT(*) as total_graded,
+                    AVG(g.grade) as average_grade,
+                    MIN(g.grade) as min_grade,
+                    MAX(g.grade) as max_grade,
+                    COUNT(DISTINCT g.student_id) as students_graded,
+                    COUNT(DISTINCT g.assignment_id) as assignments_graded
+                FROM assignment_submissions g
+                JOIN assignments a ON g.assignment_id = a.id
+                WHERE a.teacher_id = ? AND g.grade IS NOT NULL
+                """;
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                stats.setTotalGraded(rs.getInt("total_graded"));
+                stats.setAverageGrade(rs.getDouble("average_grade"));
+                stats.setMinGrade(rs.getInt("min_grade"));
+                stats.setMaxGrade(rs.getInt("max_grade"));
+                stats.setStudentsGraded(rs.getInt("students_graded"));
+                stats.setAssignmentsGraded(rs.getInt("assignments_graded"));
+            }
+        }
+        return stats;
+    }
+
+    // Get grade distribution for a teacher
+    public List<GradeDistribution> getGradeDistribution(long teacherId) throws SQLException {
+        List<GradeDistribution> distribution = new ArrayList<>();
+        String sql = """
+                SELECT
+                    CASE
+                        WHEN g.grade >= 90 THEN 'A'
+                        WHEN g.grade >= 80 THEN 'B'
+                        WHEN g.grade >= 70 THEN 'C'
+                        WHEN g.grade >= 60 THEN 'D'
+                        ELSE 'F'
+                    END as letter_grade,
+                    COUNT(*) as count,
+                    COUNT(*) * 100.0 / (SELECT COUNT(*) FROM assignment_submissions g2
+                                       JOIN assignments a2 ON g2.assignment_id = a2.id
+                                       WHERE a2.teacher_id = ? AND g2.grade IS NOT NULL) as percentage
+                FROM assignment_submissions g
+                JOIN assignments a ON g.assignment_id = a.id
+                WHERE a.teacher_id = ? AND g.grade IS NOT NULL
+                GROUP BY
+                    CASE
+                        WHEN g.grade >= 90 THEN 'A'
+                        WHEN g.grade >= 80 THEN 'B'
+                        WHEN g.grade >= 70 THEN 'C'
+                        WHEN g.grade >= 60 THEN 'D'
+                        ELSE 'F'
+                    END
+                ORDER BY letter_grade
+                """;
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ps.setLong(2, teacherId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                GradeDistribution gd = new GradeDistribution();
+                gd.setLetterGrade(rs.getString("letter_grade"));
+                gd.setCount(rs.getInt("count"));
+                gd.setPercentage(rs.getDouble("percentage"));
+                distribution.add(gd);
+            }
+        }
+        return distribution;
+    }
+
+    // Check if an assignment has been graded
+    public boolean isAssignmentGraded(long assignmentId, long studentId) throws SQLException {
+        String sql = "SELECT COUNT(*) as count FROM assignment_submissions WHERE assignment_id = ? AND student_id = ? AND grade IS NOT NULL";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, assignmentId);
+            ps.setLong(2, studentId);
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                return rs.getInt("count") > 0;
+            }
+            return false;
+        }
+    }
+
+    // Delete a grade
+    public boolean deleteGrade(long assignmentId, long studentId) throws SQLException {
+        String sql = "UPDATE assignment_submissions SET grade = NULL, feedback = NULL, graded_by = NULL, graded_at = NULL WHERE assignment_id = ? AND student_id = ?";
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, assignmentId);
+            ps.setLong(2, studentId);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    // Get all submissions (graded and ungraded) for an assignment
+    public List<Grade> getSubmissionsByAssignment(long assignmentId) throws SQLException {
+        List<Grade> submissions = new ArrayList<>();
+        String sql = """
+                SELECT
+                    g.*,
+                    u.full_name as student_name,
+                    u.email,
+                    a.title as assignment_title,
+                    a.total_marks,
+                    ts.teacher_id
+                FROM assignment_submissions g
+                JOIN users u ON g.student_id = u.id
+                JOIN assignments a ON g.assignment_id = a.id
+                LEFT JOIN teacher_students ts ON u.id = ts.student_id AND a.teacher_id = ts.teacher_id
+                WHERE g.assignment_id = ?
+                ORDER BY u.full_name
+                """;
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, assignmentId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                submissions.add(map(rs));
+            }
+        }
+        return submissions;
+    }
+
+    // Get ungraded submissions for a teacher
+    public List<Grade> getUngradedSubmissions(long teacherId) throws SQLException {
+        List<Grade> submissions = new ArrayList<>();
+        String sql = """
+                SELECT
+                    g.*,
+                    u.full_name as student_name,
+                    a.title as assignment_title,
+                    a.due_date,
+                    a.total_marks
+                FROM assignment_submissions g
+                JOIN users u ON g.student_id = u.id
+                JOIN assignments a ON g.assignment_id = a.id
+                WHERE a.teacher_id = ? AND g.grade IS NULL
+                ORDER BY a.due_date, u.full_name
+                """;
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                submissions.add(map(rs));
+            }
+        }
+        return submissions;
+    }
+
+    // Get recent graded assignments (for dashboard)
+    public List<Grade> getRecentGrades(long teacherId, int limit) throws SQLException {
+        List<Grade> grades = new ArrayList<>();
+        String sql = """
+                SELECT g.*, u.full_name as student_name, a.title as assignment_title, a.total_marks
+                FROM assignment_submissions g
+                JOIN users u ON g.student_id = u.id
+                JOIN assignments a ON g.assignment_id = a.id
+                WHERE a.teacher_id = ? AND g.grade IS NOT NULL
+                ORDER BY g.graded_at DESC
+                LIMIT ?
+                """;
+
+        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+            ps.setLong(1, teacherId);
+            ps.setInt(2, limit);
+            ResultSet rs = ps.executeQuery();
+
+            while (rs.next()) {
+                grades.add(map(rs));
+            }
+        }
+        return grades;
+    }
+
+    // Helper method to map ResultSet to Grade object
+    private Grade map(ResultSet rs) throws SQLException {
+        Grade grade = new Grade();
+        grade.setId(rs.getLong("id"));
+        grade.setAssignmentId(rs.getLong("assignment_id"));
+        grade.setStudentId(rs.getLong("student_id"));
+        grade.setMarks(rs.getInt("grade"));
+        grade.setFeedback(rs.getString("feedback"));
+
+        Long gradedBy = rs.getLong("graded_by");
+        if (gradedBy > 0) {
+            grade.setGradedBy(gradedBy);
+        }
+
+        Timestamp gradedAt = rs.getTimestamp("graded_at");
+        if (gradedAt != null) {
+            grade.setGradedAt(gradedAt.toLocalDateTime());
+        } else {
+            grade.setGradedAt(LocalDateTime.now());
+        }
+
+        // Additional info
+        try {
+            grade.setStudentName(rs.getString("student_name"));
+        } catch (SQLException e) {
+            // Column might not exist in all queries
+        }
+
+        try {
+            grade.setAssignmentTitle(rs.getString("assignment_title"));
+        } catch (SQLException e) {
+            // Column might not exist in all queries
+        }
+
+        try {
+            grade.setTotalMarks(rs.getInt("total_marks"));
+        } catch (SQLException e) {
+            // Column might not exist in all queries
+        }
+
+        return grade;
+    }
+
+    // Inner class for grade statistics
+    public static class GradeStatistics {
+        private int totalGraded;
+        private double averageGrade;
+        private int minGrade;
+        private int maxGrade;
+        private int studentsGraded;
+        private int assignmentsGraded;
+
+        // Getters and setters
+        public int getTotalGraded() {
+            return totalGraded;
+        }
+
+        public void setTotalGraded(int totalGraded) {
+            this.totalGraded = totalGraded;
+        }
+
+        public double getAverageGrade() {
+            return averageGrade;
+        }
+
+        public void setAverageGrade(double averageGrade) {
+            this.averageGrade = averageGrade;
+        }
+
+        public int getMinGrade() {
+            return minGrade;
+        }
+
+        public void setMinGrade(int minGrade) {
+            this.minGrade = minGrade;
+        }
+
+        public int getMaxGrade() {
+            return maxGrade;
+        }
+
+        public void setMaxGrade(int maxGrade) {
+            this.maxGrade = maxGrade;
+        }
+
+        public int getStudentsGraded() {
+            return studentsGraded;
+        }
+
+        public void setStudentsGraded(int studentsGraded) {
+            this.studentsGraded = studentsGraded;
+        }
+
+        public int getAssignmentsGraded() {
+            return assignmentsGraded;
+        }
+
+        public void setAssignmentsGraded(int assignmentsGraded) {
+            this.assignmentsGraded = assignmentsGraded;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("Graded: %d, Avg: %.2f, Min: %d, Max: %d, Students: %d, Assignments: %d",
+                    totalGraded, averageGrade, minGrade, maxGrade, studentsGraded, assignmentsGraded);
+        }
+    }
+
+    // Inner class for grade distribution
+    public static class GradeDistribution {
+        private String letterGrade;
+        private int count;
+        private double percentage;
+
+        // Getters and setters
+        public String getLetterGrade() {
+            return letterGrade;
+        }
+
+        public void setLetterGrade(String letterGrade) {
+            this.letterGrade = letterGrade;
+        }
+
+        public int getCount() {
+            return count;
+        }
+
+        public void setCount(int count) {
+            this.count = count;
+        }
+
+        public double getPercentage() {
+            return percentage;
+        }
+
+        public void setPercentage(double percentage) {
+            this.percentage = percentage;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("%s: %d (%.1f%%)", letterGrade, count, percentage);
+        }
+    }
+}

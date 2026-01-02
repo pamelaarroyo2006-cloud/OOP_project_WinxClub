@@ -1,0 +1,590 @@
+package iems.apps;
+
+import iems.dao.Db;
+import iems.dao.MaterialDAO;
+import iems.dao.TutoringDAO;
+import iems.dao.UserDAO;
+import iems.dao.AssignmentDAO;
+import iems.model.Material;
+import iems.model.TutoringProgram;
+import iems.model.User;
+import iems.model.Assignment;
+import iems.model.Role;
+import iems.ui.DashboardFrame;
+import iems.ui.LoginPanel;
+import iems.ui.RegisterPanel;
+import iems.util.SecurityUtil;
+
+import javax.swing.*;
+import java.awt.*;
+import java.sql.Statement;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.time.LocalDate;
+
+public class IEMSApp {
+
+    public static void main(String[] args) throws Exception {
+        // Set to cross-platform look and feel for consistent login UI
+        try {
+            UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // ✅ Connect to MySQL
+        Db.init(
+                "jdbc:mysql://localhost:3306/iems_db",
+                "root",
+                "dmsgreate08312001");
+
+        ensureSchema();
+        seedDemoData();
+
+        SwingUtilities.invokeLater(() -> {
+            JFrame loginFrame = new JFrame("Inclusive Education Management System (IEMS)");
+            loginFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+            loginFrame.setSize(500, 520);
+            loginFrame.setLocationRelativeTo(null);
+
+            // Create gradient background panel
+            JPanel mainPanel = new JPanel(new BorderLayout()) {
+                @Override
+                protected void paintComponent(Graphics g) {
+                    super.paintComponent(g);
+                    Graphics2D g2 = (Graphics2D) g;
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                    GradientPaint gp = new GradientPaint(
+                            0, 0, new Color(58, 123, 213),
+                            0, getHeight(), new Color(0, 210, 255));
+                    g2.setPaint(gp);
+                    g2.fillRect(0, 0, getWidth(), getHeight());
+                }
+            };
+
+            LoginPanel login = new LoginPanel(
+                    user -> {
+                        // Switch to system L&F for dashboard
+                        try {
+                            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+                            SwingUtilities.updateComponentTreeUI(loginFrame);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                        loginFrame.dispose();
+                        new DashboardFrame(user).setVisible(true);
+                    },
+                    () -> {
+                        // Use loginFrame as the parent
+                        JDialog registerDialog = new JDialog(loginFrame, "Register", true);
+                        RegisterPanel reg = new RegisterPanel(u -> {
+                            registerDialog.dispose();
+                            JOptionPane.showMessageDialog(loginFrame,
+                                    "Account created. You can now log in.",
+                                    "Registration Successful",
+                                    JOptionPane.INFORMATION_MESSAGE);
+                        });
+                        registerDialog.setContentPane(reg);
+                        registerDialog.pack();
+                        registerDialog.setSize(550, 700);
+                        registerDialog.setLocationRelativeTo(loginFrame);
+                        registerDialog.setResizable(true);
+                        registerDialog.setVisible(true);
+                    });
+
+            mainPanel.add(login, BorderLayout.CENTER);
+            loginFrame.setContentPane(mainPanel);
+            loginFrame.setVisible(true);
+        });
+    }
+
+    // ✅ MySQL schema creation with updated tables
+    private static void ensureSchema() throws Exception {
+        try (Statement st = Db.get().createStatement()) {
+            // Drop existing tables if they exist (for clean setup)
+            String[] dropTables = {
+                    "tutoring_signups",
+                    "assignment_submissions",
+                    "assignments",
+                    "materials",
+                    "tutoring_programs",
+                    "support_requests",
+                    "teacher_students",
+                    "users"
+            };
+
+            for (String table : dropTables) {
+                try {
+                    st.executeUpdate("DROP TABLE IF EXISTS " + table);
+                } catch (Exception e) {
+                    System.out.println("Note: Could not drop table " + table + ": " + e.getMessage());
+                }
+            }
+
+            // Create users table with BIGINT for compatibility
+            st.executeUpdate("""
+                        CREATE TABLE users(
+                          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                          full_name VARCHAR(100),
+                          email VARCHAR(100) UNIQUE,
+                          age INT,
+                          role VARCHAR(20),
+                          password_hash VARCHAR(255),
+                          high_contrast BOOLEAN DEFAULT FALSE,
+                          font_scale INT DEFAULT 100,
+                          theme VARCHAR(20) DEFAULT 'light',
+                          reset_token VARCHAR(255),
+                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          INDEX idx_email (email),
+                          INDEX idx_role (role)
+                        )
+                    """);
+
+            // Create teacher_students relationship table
+            st.executeUpdate("""
+                        CREATE TABLE teacher_students(
+                          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                          teacher_id BIGINT NOT NULL,
+                          student_id BIGINT NOT NULL,
+                          assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE CASCADE,
+                          FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+                          UNIQUE KEY unique_teacher_student (teacher_id, student_id),
+                          INDEX idx_teacher (teacher_id),
+                          INDEX idx_student (student_id)
+                        )
+                    """);
+
+            // Create updated materials table with teacher_id
+            st.executeUpdate("""
+                        CREATE TABLE materials(
+                          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                          title VARCHAR(200) NOT NULL,
+                          description TEXT,
+                          topic VARCHAR(100),
+                          level VARCHAR(50),
+                          format VARCHAR(50),
+                          file_path VARCHAR(500),
+                          teacher_id BIGINT,
+                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE SET NULL,
+                          INDEX idx_teacher_id (teacher_id),
+                          INDEX idx_topic (topic)
+                        )
+                    """);
+
+            // Create assignments table
+            st.executeUpdate("""
+                        CREATE TABLE assignments(
+                          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                          title VARCHAR(200) NOT NULL,
+                          description TEXT,
+                          teacher_id BIGINT NOT NULL,
+                          due_date DATE NOT NULL,
+                          subject VARCHAR(100),
+                          total_marks INT DEFAULT 100,
+                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE CASCADE,
+                          INDEX idx_teacher_id (teacher_id),
+                          INDEX idx_due_date (due_date),
+                          INDEX idx_subject (subject)
+                        )
+                    """);
+
+            // Create assignment submissions table
+            st.executeUpdate("""
+                        CREATE TABLE assignment_submissions(
+                          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                          assignment_id BIGINT NOT NULL,
+                          student_id BIGINT NOT NULL,
+                          file_path VARCHAR(500),
+                          submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          grade INT,
+                          feedback TEXT,
+                          FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE,
+                          FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+                          UNIQUE KEY unique_submission (assignment_id, student_id),
+                          INDEX idx_assignment (assignment_id),
+                          INDEX idx_student (student_id)
+                        )
+                    """);
+
+            // Create tutoring programs table
+            st.executeUpdate("""
+                        CREATE TABLE tutoring_programs(
+                          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                          subject VARCHAR(100),
+                          modality VARCHAR(50),
+                          schedule VARCHAR(100),
+                          seats INT DEFAULT 20,
+                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          INDEX idx_subject (subject)
+                        )
+                    """);
+
+            // Create tutoring signups table
+            st.executeUpdate("""
+                        CREATE TABLE tutoring_signups(
+                          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                          program_id BIGINT,
+                          user_id BIGINT,
+                          status VARCHAR(50) DEFAULT 'pending',
+                          signed_up_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          FOREIGN KEY (program_id) REFERENCES tutoring_programs(id) ON DELETE CASCADE,
+                          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                          UNIQUE KEY unique_signup (program_id, user_id),
+                          INDEX idx_program (program_id),
+                          INDEX idx_user (user_id)
+                        )
+                    """);
+
+            // Create support requests table
+            st.executeUpdate("""
+                        CREATE TABLE support_requests(
+                          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                          user_id BIGINT,
+                          type VARCHAR(100),
+                          status VARCHAR(50) DEFAULT 'open',
+                          notes TEXT,
+                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                          INDEX idx_user (user_id),
+                          INDEX idx_status (status)
+                        )
+                    """);
+
+            System.out.println("Database schema created successfully!");
+        }
+    }
+
+    // ✅ Seed demo data with teachers, students, materials, and assignments
+    private static void seedDemoData() {
+        try {
+            UserDAO udao = new UserDAO();
+            MaterialDAO mdao = new MaterialDAO();
+            TutoringDAO tdao = new TutoringDAO();
+            AssignmentDAO adao = new AssignmentDAO();
+
+            System.out.println("Seeding demo data...");
+
+            // Create admin user
+            if (udao.findByEmail("admin@iems.local").isEmpty()) {
+                User admin = new User();
+                admin.setFullName("System Administrator");
+                admin.setEmail("admin@iems.local");
+                admin.setAge(35);
+                admin.setRole(Role.ADMIN);
+                admin.setPasswordHash(SecurityUtil.hashPassword("admin123"));
+                udao.create(admin);
+                System.out.println("Created admin user");
+            }
+
+            // Create teacher users
+            User mathTeacher = null;
+            if (udao.findByEmail("teacher.math@iems.local").isEmpty()) {
+                mathTeacher = new User();
+                mathTeacher.setFullName("Sarah Johnson");
+                mathTeacher.setEmail("teacher.math@iems.local");
+                mathTeacher.setAge(40);
+                mathTeacher.setRole(Role.TEACHER);
+                mathTeacher.setPasswordHash(SecurityUtil.hashPassword("teacher123"));
+                udao.create(mathTeacher);
+                System.out.println("Created math teacher");
+            } else {
+                mathTeacher = udao.findByEmail("teacher.math@iems.local").get();
+            }
+
+            User scienceTeacher = null;
+            if (udao.findByEmail("teacher.science@iems.local").isEmpty()) {
+                scienceTeacher = new User();
+                scienceTeacher.setFullName("Michael Chen");
+                scienceTeacher.setEmail("teacher.science@iems.local");
+                scienceTeacher.setAge(38);
+                scienceTeacher.setRole(Role.TEACHER);
+                scienceTeacher.setPasswordHash(SecurityUtil.hashPassword("teacher123"));
+                udao.create(scienceTeacher);
+                System.out.println("Created science teacher");
+            } else {
+                scienceTeacher = udao.findByEmail("teacher.science@iems.local").get();
+            }
+
+            // Create student users
+            String[] studentNames = {
+                    "Alex Rodriguez", "Brittany Lee", "Chris Thompson", "Dana Wilson",
+                    "Ethan Martinez", "Fiona Brown", "George Davis", "Hannah Garcia"
+            };
+
+            for (int i = 0; i < studentNames.length; i++) {
+                String email = "student" + (i + 1) + "@iems.local";
+                if (udao.findByEmail(email).isEmpty()) {
+                    User student = new User();
+                    student.setFullName(studentNames[i]);
+                    student.setEmail(email);
+                    student.setAge(16 + i);
+                    student.setRole(Role.LEARNER);
+                    student.setPasswordHash(SecurityUtil.hashPassword("student123"));
+                    udao.create(student);
+                    System.out.println("Created student: " + studentNames[i]);
+
+                    // Assign students to teachers
+                    assignStudentToTeacher(udao, student.getId(), mathTeacher.getId());
+                    assignStudentToTeacher(udao, student.getId(), scienceTeacher.getId());
+                }
+            }
+
+            // Create materials for teachers
+            if (mdao.all().isEmpty()) {
+                // Math materials
+                Material m1 = new Material();
+                m1.setTitle("Algebra Fundamentals");
+                m1.setDescription("Introduction to algebraic expressions and equations");
+                m1.setTopic("Algebra");
+                m1.setLevel("High School");
+                m1.setFormat("PDF");
+                m1.setFilePath("/materials/algebra_fundamentals.pdf");
+                m1.setTeacherId(mathTeacher.getId());
+                mdao.create(m1);
+
+                Material m2 = new Material();
+                m2.setTitle("Geometry Basics");
+                m2.setDescription("Basic concepts of geometry and shapes");
+                m2.setTopic("Geometry");
+                m2.setLevel("Middle School");
+                m2.setFormat("Video");
+                m2.setFilePath("/materials/geometry_basics.mp4");
+                m2.setTeacherId(mathTeacher.getId());
+                mdao.create(m2);
+
+                // Science materials
+                Material m3 = new Material();
+                m3.setTitle("Biology Introduction");
+                m3.setDescription("Introduction to biology and living organisms");
+                m3.setTopic("Biology");
+                m3.setLevel("High School");
+                m3.setFormat("PDF");
+                m3.setFilePath("/materials/biology_intro.pdf");
+                m3.setTeacherId(scienceTeacher.getId());
+                mdao.create(m3);
+
+                Material m4 = new Material();
+                m4.setTitle("Chemistry Lab Safety");
+                m4.setDescription("Safety procedures for chemistry laboratories");
+                m4.setTopic("Chemistry");
+                m4.setLevel("High School");
+                m4.setFormat("Document");
+                m4.setFilePath("/materials/chem_lab_safety.docx");
+                m4.setTeacherId(scienceTeacher.getId());
+                mdao.create(m4);
+
+                System.out.println("Created demo materials");
+            }
+
+            // Create assignments for teachers
+            if (adao.getAll().isEmpty()) {
+                // Math assignments
+                Assignment a1 = new Assignment();
+                a1.setTitle("Algebra Homework #1");
+                a1.setDescription("Solve the following algebraic equations and show your work.");
+                a1.setTeacherId(mathTeacher.getId());
+                a1.setDueDate(LocalDate.now().plusDays(7));
+                a1.setSubject("Mathematics");
+                a1.setTotalMarks(100);
+                adao.create(a1);
+
+                Assignment a2 = new Assignment();
+                a2.setTitle("Geometry Quiz");
+                a2.setDescription("Quiz on geometric shapes and their properties.");
+                a2.setTeacherId(mathTeacher.getId());
+                a2.setDueDate(LocalDate.now().plusDays(3));
+                a2.setSubject("Mathematics");
+                a2.setTotalMarks(50);
+                adao.create(a2);
+
+                // Science assignments
+                Assignment a3 = new Assignment();
+                a3.setTitle("Biology Research Paper");
+                a3.setDescription("Write a 5-page research paper on cellular biology.");
+                a3.setTeacherId(scienceTeacher.getId());
+                a3.setDueDate(LocalDate.now().plusDays(14));
+                a3.setSubject("Science");
+                a3.setTotalMarks(150);
+                adao.create(a3);
+
+                Assignment a4 = new Assignment();
+                a4.setTitle("Chemistry Lab Report");
+                a4.setDescription("Write a lab report for the chemical reactions experiment.");
+                a4.setTeacherId(scienceTeacher.getId());
+                a4.setDueDate(LocalDate.now().plusDays(5));
+                a4.setSubject("Science");
+                a4.setTotalMarks(80);
+                adao.create(a4);
+
+                System.out.println("Created demo assignments");
+            }
+
+            // Create tutoring programs
+            if (tdao.all().isEmpty()) {
+                TutoringProgram t1 = new TutoringProgram();
+                t1.setSubject("Math Fundamentals");
+                t1.setModality("Online");
+                t1.setSchedule("Sat 9:00–11:00");
+                t1.setSeatsAvailable(25);
+                tdao.create(t1);
+
+                TutoringProgram t2 = new TutoringProgram();
+                t2.setSubject("English Reading");
+                t2.setModality("In-person");
+                t2.setSchedule("Sun 13:00–15:00 @ Community Center");
+                t2.setSeatsAvailable(15);
+                tdao.create(t2);
+
+                TutoringProgram t3 = new TutoringProgram();
+                t3.setSubject("Science Club");
+                t3.setModality("Hybrid");
+                t3.setSchedule("Wed 15:00–17:00");
+                t3.setSeatsAvailable(30);
+                tdao.create(t3);
+
+                System.out.println("Created tutoring programs");
+            }
+
+            System.out.println("Demo data seeding completed successfully!");
+
+            // Print summary
+            try {
+                System.out.println("\n=== Database Summary ===");
+                System.out.println("Total Users: " + countUsers());
+                System.out.println("Teachers: " + countUsersByRole("TEACHER"));
+                System.out.println("Students: " + countUsersByRole("LEARNER"));
+                System.out.println("Materials: " + countMaterials());
+                System.out.println("Assignments: " + countAssignments());
+                System.out.println("Tutoring Programs: " + countTutoringPrograms());
+                System.out.println("=======================\n");
+            } catch (Exception e) {
+                System.out.println("Could not generate summary: " + e.getMessage());
+            }
+
+        } catch (Exception e) {
+            System.err.println("Error seeding demo data: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    // Helper method to assign students to teachers
+    private static void assignStudentToTeacher(UserDAO udao, long studentId, long teacherId) {
+        try {
+            String sql = "INSERT IGNORE INTO teacher_students (teacher_id, student_id) VALUES (?, ?)";
+            try (PreparedStatement ps = Db.get().prepareStatement(sql)) {
+                ps.setLong(1, teacherId);
+                ps.setLong(2, studentId);
+                ps.executeUpdate();
+            }
+        } catch (Exception e) {
+            System.err.println("Error assigning student to teacher: " + e.getMessage());
+        }
+    }
+
+    // Helper methods for summary statistics
+    private static int countUsers() throws Exception {
+        try (Statement st = Db.get().createStatement();
+                ResultSet rs = st.executeQuery("SELECT COUNT(*) as count FROM users")) {
+            if (rs.next()) {
+                return rs.getInt("count");
+            }
+        }
+        return 0;
+    }
+
+    private static int countUsersByRole(String role) throws Exception {
+        try (PreparedStatement ps = Db.get().prepareStatement(
+                "SELECT COUNT(*) as count FROM users WHERE role = ?")) {
+            ps.setString(1, role);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return rs.getInt("count");
+            }
+        }
+        return 0;
+    }
+
+    private static int countMaterials() throws Exception {
+        try (Statement st = Db.get().createStatement();
+                ResultSet rs = st.executeQuery("SELECT COUNT(*) as count FROM materials")) {
+            if (rs.next()) {
+                return rs.getInt("count");
+            }
+        }
+        return 0;
+    }
+
+    private static int countAssignments() throws Exception {
+        try (Statement st = Db.get().createStatement();
+                ResultSet rs = st.executeQuery("SELECT COUNT(*) as count FROM assignments")) {
+            if (rs.next()) {
+                return rs.getInt("count");
+            }
+        }
+        return 0;
+    }
+
+    private static int countTutoringPrograms() throws Exception {
+        try (Statement st = Db.get().createStatement();
+                ResultSet rs = st.executeQuery("SELECT COUNT(*) as count FROM tutoring_programs")) {
+            if (rs.next()) {
+                return rs.getInt("count");
+            }
+        }
+        return 0;
+    }
+
+    // Optional: Create login frame method (kept for compatibility)
+    public static JFrame createLoginFrame() {
+        JFrame frame = new JFrame("Inclusive Education Management System (IEMS)");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setSize(500, 520);
+        frame.setLocationRelativeTo(null);
+
+        JPanel mainPanel = new JPanel(new BorderLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                GradientPaint gp = new GradientPaint(
+                        0, 0, new Color(58, 123, 213),
+                        0, getHeight(), new Color(0, 210, 255));
+                g2.setPaint(gp);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+            }
+        };
+
+        LoginPanel login = new LoginPanel(
+                user -> {
+                    frame.dispose();
+                    new DashboardFrame(user).setVisible(true);
+                },
+                () -> {
+                    JDialog registerDialog = new JDialog(frame, "Register", true);
+                    RegisterPanel reg = new RegisterPanel(u -> {
+                        registerDialog.dispose();
+                        JOptionPane.showMessageDialog(frame,
+                                "Account created. You can now log in.",
+                                "Registration Successful",
+                                JOptionPane.INFORMATION_MESSAGE);
+                    });
+                    registerDialog.setContentPane(reg);
+                    registerDialog.pack();
+                    registerDialog.setSize(550, 700);
+                    registerDialog.setLocationRelativeTo(frame);
+                    registerDialog.setResizable(true);
+                    registerDialog.setVisible(true);
+                });
+
+        mainPanel.add(login, BorderLayout.CENTER);
+        frame.setContentPane(mainPanel);
+        return frame;
+    }
+}
